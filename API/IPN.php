@@ -8,7 +8,6 @@ if (!defined('ABSPATH')) {
 
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Submission;
-use WPPayForm\App\Models\SubmissionActivity;
 use XenditPaymentForPaymattic\Settings\XenditSettings;
 use WPPayForm\App\Models\Transaction;
 
@@ -47,67 +46,16 @@ class IPN
            $this->handleInvoicePaid($data);
         } else {
              error_log("specific event");
+             error_log(print_r($data));
+             $this->handleIpn($data);
         }
        
-        // // Start the encoded data collection with notification command
-        // $encoded_data = 'cmd=_notify-validate';
-
-        // // Get current arg separator
-        // $arg_separator = ini_get('arg_separator.output');
-
-        // // Verify there is a post_data
-        // if ($post_data || strlen($post_data) > 0) {
-        //     // Append the data
-        //     $encoded_data .= $arg_separator . $post_data;
-        // } else {
-        //     // Check if POST is empty
-        //     if (empty($_POST)) {
-        //         // Nothing to do
-        //         return;
-        //     } else {
-        //         // Loop through each POST
-        //         foreach ($_POST as $key => $value) {
-        //             // Encode the value and append the data
-        //             $encoded_data .= $arg_separator . "$key=" . urlencode($value);
-        //         }
-        //     }
-        // }
-
         exit(200);
     }
 
     protected function handleIpn($data)
     {
-        $submissionId = intval(Arr::get($data, 'submission_id'));
-        if (!$submissionId || empty($data['id'])) {
-            return;
-        }
-        $submission = Submission::where('id', $submissionId)->first();
-
-        if (!$submission) {
-            return;
-        }
-        $vendorTransaction = $this->makeApiCall('payments/'.$data['id'], [], $submission->form_id, 'GET');
-
-        if (is_wp_error($vendorTransaction)) {
-            do_action('wppayform_log_data', [
-                'form_id' => $submission->form_id,
-                'submission_id' => $submission->id,
-                'type' => 'activity',
-                'component' => 'Payment',
-                'created_by' => 'Paymattic BOT',
-                'title' => 'Xendit Payment Webhook Error',
-                'content' => $vendorTransaction->get_error_message()
-            ]);
-        }
-
-        $status = $vendorTransaction['status'];
-        do_action('wppayform_ipn_xendit_action_'.$status, $submission, $vendorTransaction);
-
-        if ($refundAmount = Arr::get($vendorTransaction, 'amountRefunded.value')) {
-            $refundAmount = intval($refundAmount * 100); // in cents
-            do_action('wppayform_ipn_xendit_action_refunded', $refundAmount, $submission, $vendorTransaction);
-        }
+        //handle specific events in the future
     }
 
     protected function handleInvoicePaid($data) 
@@ -120,8 +68,15 @@ class IPN
             ->where('payment_method', 'xendit')
             ->first();
 
-        error_log(print_r($transaction, true));
-         if (!$transaction || $transaction->payment_method != 'xendit') {
+        if (!$transaction || $transaction->payment_method != 'xendit') {
+            return;
+        }
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+
+        if ($submission->submission_hash != $externalId) {
+            // not our invoic
             return;
         }
 

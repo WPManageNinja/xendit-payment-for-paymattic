@@ -34,7 +34,7 @@ class XenditProcessor
 
         add_filter('wppayform/choose_payment_method_for_submission', array($this, 'choosePaymentMethod'), 10, 4);
         add_action('wppayform/form_submission_make_payment_xendit', array($this, 'makeFormPayment'), 10, 6);
-        add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
+        // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
         add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
@@ -129,17 +129,9 @@ class XenditProcessor
     }
 
     public function handleRedirect($transaction, $submission, $form, $methodSettings)
-    {
-        
+    {        
         $successUrl = $this->getSuccessURL($form, $submission);
-        // dd($successUrl);
-        $listener_url = add_query_arg(array(
-            'wpf_payment_api_notify' => 1,
-            'payment_method'         => $this->method,
-            'submission_id'          => $submission->id,
-            'transaction_hash'       => $transaction->transaction_hash,
-        ), home_url('index.php'));
-
+        $shoudSendEmail = true;
         // we need to change according to the payment gateway documentation
         $paymentArgs = array(
             'external_id' => $submission->submission_hash,
@@ -147,10 +139,9 @@ class XenditProcessor
             'description' => $form->post_title,
             'payer_email' => $submission->customer_email,
             'invoice_duration' => 86400,
-            // 'should_send_email' => false,
+            // 'should_send_email' => $shoudSendEmail,
             'success_redirect_url' => $successUrl,
             'currency' => $submission->currency,
-            'payment_methods' => array("CREDIT_CARD", "BCA", "BNI", "7ELEVEN"),
             'locale' => 'en',
         );
 
