@@ -8,12 +8,23 @@ if (!defined('ABSPATH')) {
 
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Submission;
-use XenditForPaymattic\Settings\XenditSettings;
+use WPPayForm\App\Models\SubmissionActivity;
+use XenditPaymentForPaymattic\Settings\XenditSettings;
+use WPPayForm\App\Models\Transaction;
 
 class IPN
 {
+    public function init() 
+    {
+        add_action('init', array($this, 'verifyIPN'));
+    }
+
     public function verifyIPN()
     {
+        if (!isset($_REQUEST['wpf_xendit_listener'])) {
+            return;
+        }
+
         // Check the request method is POST
         if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] != 'POST') {
             return;
@@ -29,45 +40,39 @@ class IPN
             // If allow_url_fopen is not enabled, then make sure that post_max_size is large enough
             ini_set('post_max_size', '12M');
         }
-        // Start the encoded data collection with notification command
-        $encoded_data = 'cmd=_notify-validate';
 
-        // Get current arg separator
-        $arg_separator = ini_get('arg_separator.output');
+        $data =  json_decode($post_data); 
 
-        // Verify there is a post_data
-        if ($post_data || strlen($post_data) > 0) {
-            // Append the data
-            $encoded_data .= $arg_separator . $post_data;
+        if (!property_exists($data, 'event')) {
+           $this->handleInvoicePaid($data);
         } else {
-            // Check if POST is empty
-            if (empty($_POST)) {
-                // Nothing to do
-                return;
-            } else {
-                // Loop through each POST
-                foreach ($_POST as $key => $value) {
-                    // Encode the value and append the data
-                    $encoded_data .= $arg_separator . "$key=" . urlencode($value);
-                }
-            }
+             error_log("specific event");
         }
+       
+        // // Start the encoded data collection with notification command
+        // $encoded_data = 'cmd=_notify-validate';
 
-        // Convert collected post data to an array
-        parse_str($encoded_data, $encoded_data_array);
+        // // Get current arg separator
+        // $arg_separator = ini_get('arg_separator.output');
 
-        foreach ($encoded_data_array as $key => $value) {
-            if (false !== strpos($key, 'amp;')) {
-                $new_key = str_replace('&amp;', '&', $key);
-                $new_key = str_replace('amp;', '&', $new_key);
-                unset($encoded_data_array[$key]);
-                $encoded_data_array[$new_key] = $value;
-            }
-        }
+        // // Verify there is a post_data
+        // if ($post_data || strlen($post_data) > 0) {
+        //     // Append the data
+        //     $encoded_data .= $arg_separator . $post_data;
+        // } else {
+        //     // Check if POST is empty
+        //     if (empty($_POST)) {
+        //         // Nothing to do
+        //         return;
+        //     } else {
+        //         // Loop through each POST
+        //         foreach ($_POST as $key => $value) {
+        //             // Encode the value and append the data
+        //             $encoded_data .= $arg_separator . "$key=" . urlencode($value);
+        //         }
+        //     }
+        // }
 
-        $defaults = $_REQUEST;
-        $encoded_data_array = wp_parse_args($encoded_data_array, $defaults);
-        $this->handleIpn($encoded_data_array);
         exit(200);
     }
 
@@ -105,13 +110,53 @@ class IPN
         }
     }
 
+    protected function handleInvoicePaid($data) 
+    {
+        $invoiceId = $data->id;
+        $externalId = $data->external_id;
+
+        //get transaction from database
+        $transaction = Transaction::where('charge_id', $invoiceId)
+            ->where('payment_method', 'xendit')
+            ->first();
+
+        error_log(print_r($transaction, true));
+         if (!$transaction || $transaction->payment_method != 'xendit') {
+            return;
+        }
+
+        $invoice = $this->makeApiCall('invoices/'. $invoiceId, [], $transaction->form_id, '');
+
+        if (!$invoice || is_wp_error($invoice)) {
+            return;
+        }
+
+        do_action('wppayform/form_submission_activity_start', $transaction->form_id);
+
+        $status = 'paid';
+
+        $updateData = [
+            'payment_note'     => maybe_serialize($data),
+            'charge_id'        => sanitize_text_field($invoiceId),
+        ];
+
+        $xenditProcessor = new XenditProcessor();
+        $xenditProcessor->markAsPaid($status, $updateData, $transaction);
+
+    }
+
+
     public function makeApiCall($path, $args, $formId, $method = 'GET')
     {
         $apiKey = (new XenditSettings())->getApiKey($formId);
+        // we are using basic authentication , we will use the api key as username and password empty so add : at the end
+        $basicAuthCred =$apiKey . ':';
+        $basicAuthCred = base64_encode($basicAuthCred);
 
         $headers = [
-            'Authorization' => 'Basic ' . $apiKey
+            'Authorization' => 'Basic ' . $basicAuthCred
         ];
+
         if ($method == 'POST') {
             $response = wp_remote_post('https://api.xendit.co/v2/'.$path, [
                 'headers' => $headers,

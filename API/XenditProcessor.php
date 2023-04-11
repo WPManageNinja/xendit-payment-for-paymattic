@@ -30,19 +30,12 @@ class XenditProcessor
     {
         new  \XenditPaymentForPaymattic\Settings\XenditElement();
         (new  \XenditPaymentForPaymattic\Settings\XenditSettings())->init();
+        (new \XenditPaymentForPaymattic\API\IPN())->init();
 
         add_filter('wppayform/choose_payment_method_for_submission', array($this, 'choosePaymentMethod'), 10, 4);
         add_action('wppayform/form_submission_make_payment_xendit', array($this, 'makeFormPayment'), 10, 6);
-
         add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
-
-        add_action('wpf_ipn_endpoint_' . $this->method, function () {
-            (new \XenditPaymentForPaymattic\API\IPN())->verifyIPN();
-            exit(200);
-        });
-
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
-        add_action('wppayform_ipn_xendit_action_paid', array($this, 'handlePaid'), 10, 2);
         add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
         add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
     }
@@ -137,8 +130,9 @@ class XenditProcessor
 
     public function handleRedirect($transaction, $submission, $form, $methodSettings)
     {
+        
         $successUrl = $this->getSuccessURL($form, $submission);
-
+        // dd($successUrl);
         $listener_url = add_query_arg(array(
             'wpf_payment_api_notify' => 1,
             'payment_method'         => $this->method,
@@ -148,37 +142,47 @@ class XenditProcessor
 
         // we need to change according to the payment gateway documentation
         $paymentArgs = array(
-            'amount' => [
-                'currency' => $submission->currency,
-                'value' => number_format((float) $transaction->payment_total / 100, 2, '.', '')
-            ],
+            'external_id' => $submission->submission_hash,
+            'amount' => number_format((float) $transaction->payment_total / 100, 2, '.', ''),
             'description' => $form->post_title,
-            'redirectUrl' => $successUrl,
-            'webhookUrl' => $listener_url,
-            'metadata' => json_encode([
-                'form_id' => $form->ID,
-                'submission_id' => $submission->id
-            ]),
-            'sequenceType' => 'oneoff'
+            'payer_email' => $submission->customer_email,
+            'invoice_duration' => 86400,
+            // 'should_send_email' => false,
+            'success_redirect_url' => $successUrl,
+            'currency' => $submission->currency,
+            'payment_methods' => array("CREDIT_CARD", "BCA", "BNI", "7ELEVEN"),
+            'locale' => 'en',
         );
 
         $paymentArgs = apply_filters('wppayform_xendit_payment_args', $paymentArgs, $submission, $transaction, $form);
-        $paymentIntent = (new IPN())->makeApiCall('payments', $paymentArgs, $form->ID, 'POST');
+        $invoice = (new IPN())->makeApiCall('invoices', $paymentArgs, $form->ID, 'POST');
+        // dd($invoice);
+        $invoiceId = Arr::get($invoice, 'id');
+        $status = Arr::get($invoice, 'status');
 
-        if (is_wp_error($paymentIntent)) {
+        $transactionModel = new Transaction();
+        $transactionModel->updateTransaction($transaction->id, array(
+            'status' => strtolower($status),
+            'charge_id' => $invoiceId,
+            'payment_mode' => $this->getPaymentMode($submission->form_id)
+        ));
+
+        if (is_wp_error($invoice)) {
             do_action('wppayform_log_data', [
                 'form_id' => $submission->form_id,
                 'submission_id'        => $submission->id,
                 'type' => 'activity',
                 'created_by' => 'Paymattic BOT',
                 'title' => 'xendit Payment Redirect Error',
-                'content' => $paymentIntent->get_error_message()
+                'content' => $invoice->get_error_message()
             ]);
 
             wp_send_json_success([
-                'message'      => $paymentIntent->get_error_message()
+                'message'      => $invoice->get_error_message()
             ], 423);
         }
+
+
 
         do_action('wppayform_log_data', [
             'form_id' => $form->ID,
@@ -192,36 +196,9 @@ class XenditProcessor
         wp_send_json_success([
             // 'nextAction' => 'payment',
             'call_next_method' => 'normalRedirect',
-            'redirect_url' => $paymentIntent['_links']['checkout']['href'],
+            'redirect_url' => $invoice['invoice_url'],
             'message'      => __('You are redirecting to xendit.com to complete the purchase. Please wait while you are redirecting....', 'xendit-payment-for-paymattic'),
         ], 200);
-    }
-
-
-    public function handlePaid($submission, $vendorTransaction)
-    {
-        $transaction = $this->getLastTransaction($submission->id);
-
-        if (!$transaction || $transaction->payment_method != $this->method) {
-            return;
-        }
-
-        do_action('wppayform/form_submission_activity_start', $transaction->form_id);
-
-
-        if ($transaction->payment_method != 'xendit') {
-            return; // this isn't a xendit standard IPN
-        }
-
-        $status = 'paid';
-
-        $updateData = [
-            'payment_note'     => maybe_serialize($vendorTransaction),
-            'charge_id'        => sanitize_text_field($vendorTransaction['id']),
-        ];
-
-        // Let's make the payment as paid
-        $this->markAsPaid('paid', $updateData, $transaction);
     }
 
     public function handleRefund($refundAmount, $submission, $vendorTransaction)
