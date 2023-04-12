@@ -36,7 +36,7 @@ class XenditProcessor
         add_action('wppayform/form_submission_make_payment_xendit', array($this, 'makeFormPayment'), 10, 6);
         // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
-        add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
+        // add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
         add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
     }
 
