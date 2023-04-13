@@ -22,7 +22,7 @@ class XenditSettings extends BasePaymentMethod
             'xendit',
             'Xendit',
             [],
-            XENDIT_PAYMENT_FOR_PAYMATTIC_URL . 'assets/xendit.svg' // follow naming convention of logo with lowercase exactly as payment key
+            XENDIT_PAYMENT_FOR_PAYMATTIC_URL . 'assets/xendit.svg' // follow naming convention of logo with lowercase exactly as payment key to avoid logo rendering hassle
         );
     }
 
