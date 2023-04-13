@@ -32,7 +32,16 @@ define('XENDIT_PAYMENT_FOR_PAYMATTIC_VERSION', '1.0.0');
 
 add_action('wppayform_loaded', function () {
 
-   if (defined('WPPAYFORMHASPRO') && defined('WPPAYFORM_VERSION')) { 
+   if (!defined('WPPAYFORMHASPRO') || !defined('WPPAYFORM_VERSION')) { 
+         add_action('admin_notices', function () {
+            if (current_user_can('activate_plugins')) {
+                echo '<div class="notice notice-error"><p>';
+                echo __('Please install & Activate Paymattic Pro to use xendit-payment-for-paymattic plugin.', 'xendit-payment-for-paymattic');
+                echo '</p></div>';
+            }
+        });
+    }
+    else {
         $paymattic_pro__path = WPPAYFORMPRO_DIR_PATH . 'wp-payment-form-pro.php';
         $plugin = get_plugin_data($paymattic_pro__path);
         $currentVersion = $plugin['Version'];
@@ -51,14 +60,5 @@ add_action('wppayform_loaded', function () {
                 }
             });
         }
-    }
-    else {
-        add_action('admin_notices', function () {
-            if (current_user_can('activate_plugins')) {
-                echo '<div class="notice notice-error"><p>';
-                echo __('Please install & Activate Paymattic Pro to use xendit-payment-for-paymattic plugin.', 'xendit-payment-for-paymattic');
-                echo '</p></div>';
-            }
-        });
     }
 });
