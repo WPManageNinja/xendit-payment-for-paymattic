@@ -10,7 +10,7 @@
 /** 
  * Plugin Name: Xendit Payment for paymattic
  * Plugin URI: https://paymattic.com/
- * Description: Xendit payment gateway for paymattic.
+ * Description: Xendit payment gateway for paymattic. Xendit is the leading payment gateway in Indonesia, the Philippines, and all of Southeast Asia.
  * Version: 1.0.0
  * Author: WPManageNinja LLC
  * Author URI: https://paymattic.com/
@@ -24,6 +24,7 @@ if (!defined('ABSPATH')) {
 }
 
 defined('ABSPATH') or die;
+
 define('XENDIT_PAYMENT_FOR_PAYMATTIC', true);
 define('XENDIT_PAYMENT_FOR_PAYMATTIC_DIR', __DIR__);
 define('XENDIT_PAYMENT_FOR_PAYMATTIC_URL', plugin_dir_url(__FILE__));
@@ -50,6 +51,9 @@ add_action('wppayform_loaded', function () {
             if (!class_exists('XenditForPaymattic\XenditProcessor')) {
                 require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/API/XenditProcessor.php';
                 (new XenditPaymentForPaymattic\API\XenditProcessor())->init();
+                add_action('init', function() {
+                    load_plugin_textdomain('wp-payment-form-pro', false, dirname(plugin_basename(__FILE__)) . '/language');
+                });
             };
         } else {
             add_action('admin_notices', function () {
