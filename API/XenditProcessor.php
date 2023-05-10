@@ -147,7 +147,12 @@ class XenditProcessor
 
         $paymentArgs = apply_filters('wppayform_xendit_payment_args', $paymentArgs, $submission, $transaction, $form);
         $invoice = (new IPN())->makeApiCall('invoices', $paymentArgs, $form->ID, 'POST');
-    
+        
+        if(is_wp_error($invoice)) {
+            $message = $invoice->error_data[423]['message'];
+            wp_send_json_error( array('message' => $message), 423 );
+        }
+       
         $invoiceId = Arr::get($invoice, 'id');
         $status = Arr::get($invoice, 'status');
 
