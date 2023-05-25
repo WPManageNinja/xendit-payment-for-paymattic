@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
 
 class XenditSettings extends BasePaymentMethod
 {
-   /**
+    /**
      * Automatically create global payment settings page
      * @param  String: key, title, routes_query, 'logo')
      */
@@ -26,22 +26,22 @@ class XenditSettings extends BasePaymentMethod
         );
     }
 
-     /**
+    /**
      * @function mapperSettings, To map key => value before store
      * @function validateSettings, To validate before save settings
      */
 
     public function init()
     {
-        add_filter('wppayform_payment_method_settings_mapper_'.$this->key, array($this, 'mapperSettings'));
-        add_filter('wppayform_payment_method_settings_validation_'.$this->key, array($this, 'validateSettings'), 10, 2);
+        add_filter('wppayform_payment_method_settings_mapper_' . $this->key, array($this, 'mapperSettings'));
+        add_filter('wppayform_payment_method_settings_validation_' . $this->key, array($this, 'validateSettings'), 10, 2);
     }
 
-    public function mapperSettings ($settings)
+    public function mapperSettings($settings)
     {
         return $this->mapper(
-            static::settingsKeys(), 
-            $settings, 
+            static::settingsKeys(),
+            $settings,
             false
         );
     }
@@ -58,7 +58,8 @@ class XenditSettings extends BasePaymentMethod
         );
     }
 
-    public static function getSettings () {
+    public static function getSettings()
+    {
         $setting = get_option('wppayform_payment_settings_xendit', []);
         return wp_parse_args($setting, static::settingsKeys());
     }
@@ -66,12 +67,12 @@ class XenditSettings extends BasePaymentMethod
     public function getPaymentSettings()
     {
         $settings = $this->mapper(
-            $this->globalFields(), 
+            $this->globalFields(),
             static::getSettings()
         );
         return array(
             'settings' => $settings
-        ); 
+        );
     }
 
     /**
@@ -107,8 +108,8 @@ class XenditSettings extends BasePaymentMethod
                 'placeholder' => __('Description', 'xendit-payment-for-paymattic')
             ),
             'webhook_desc' => array(
-                'value' => "<h3>Xendit Webhook </h3> <p>In order for Xendit to function completely for payments, you must configure your Xendit webhooks. Visit your <a href='https://dashboard.xendit.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> ". site_url('?wpf_xendit_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-configure-stripe-payment-gateway-in-wordpress-with-paymattic/' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>invoice paid</code></li></ul> </div>",
-                'label' => __('Webhook URL', 'wp-payment-form'),
+                'value' => "<h3>Xendit Webhook </h3> <p>In order for Xendit to function completely for payments, you must configure your Xendit webhooks. Visit your <a href='https://dashboard.xendit.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url('?wpf_xendit_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-configure-stripe-payment-gateway-in-wordpress-with-paymattic/' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>invoice paid</code></li></ul> </div>",
+                'label' => __('Webhook URL', 'xendit-payment-for-paymattic'),
                 'type' => 'html_attr'
             ),
             'is_pro_item' => array(

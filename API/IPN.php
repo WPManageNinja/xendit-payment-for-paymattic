@@ -13,7 +13,7 @@ use WPPayForm\App\Models\Transaction;
 
 class IPN
 {
-    public function init() 
+    public function init()
     {
         add_action('init', array($this, 'verifyIPN'));
     }
@@ -40,16 +40,16 @@ class IPN
             ini_set('post_max_size', '12M');
         }
 
-        $data =  json_decode($post_data); 
+        $data =  json_decode($post_data);
 
         if (!property_exists($data, 'event')) {
-           $this->handleInvoicePaid($data);
+            $this->handleInvoicePaid($data);
         } else {
-             error_log("specific event");
-             error_log(print_r($data));
-             $this->handleIpn($data);
+            error_log("specific event");
+            error_log(print_r($data));
+            $this->handleIpn($data);
         }
-       
+
         exit(200);
     }
 
@@ -58,7 +58,7 @@ class IPN
         //handle specific events in the future
     }
 
-    protected function handleInvoicePaid($data) 
+    protected function handleInvoicePaid($data)
     {
         $invoiceId = $data->id;
         $externalId = $data->external_id;
@@ -80,7 +80,7 @@ class IPN
             return;
         }
 
-        $invoice = $this->makeApiCall('invoices/'. $invoiceId, [], $transaction->form_id, '');
+        $invoice = $this->makeApiCall('invoices/' . $invoiceId, [], $transaction->form_id, '');
 
         if (!$invoice || is_wp_error($invoice)) {
             return;
@@ -97,7 +97,6 @@ class IPN
 
         $xenditProcessor = new XenditProcessor();
         $xenditProcessor->markAsPaid($status, $updateData, $transaction);
-
     }
 
 
@@ -105,7 +104,7 @@ class IPN
     {
         $apiKey = (new XenditSettings())->getApiKey($formId);
         // we are using basic authentication , we will use the api key as username and password empty so add : at the end
-        $basicAuthCred =$apiKey . ':';
+        $basicAuthCred = $apiKey . ':';
         $basicAuthCred = base64_encode($basicAuthCred);
 
         $headers = [
@@ -113,12 +112,12 @@ class IPN
         ];
 
         if ($method == 'POST') {
-            $response = wp_remote_post('https://api.xendit.co/v2/'.$path, [
+            $response = wp_remote_post('https://api.xendit.co/v2/' . $path, [
                 'headers' => $headers,
                 'body' => $args
             ]);
         } else {
-            $response = wp_remote_get('https://api.xendit.co/v2/'.$path, [
+            $response = wp_remote_get('https://api.xendit.co/v2/' . $path, [
                 'headers' => $headers,
                 'body' => $args
             ]);
