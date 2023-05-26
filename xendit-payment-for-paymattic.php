@@ -3,7 +3,7 @@
 /**
  * @package xendit-payment-for-paymattic
  * 
-/
+*/
 
 /** 
  * Plugin Name: Xendit Payment for paymattic
@@ -34,7 +34,7 @@ if (!class_exists('XenditForPaymattic')) {
     {
         public function boot()
         {
-            if (!class_exists('XenditForPaymattic\XenditProcessor')) {
+            if (!class_exists('XenditPaymentForPaymattic\API\XenditProcessor')) {
                 $this->init();
             };
         }
@@ -57,46 +57,53 @@ if (!class_exists('XenditForPaymattic')) {
             return defined('WPPAYFORMPRO_DIR_PATH') || defined('WPPAYFORMPRO_VERSION');
         }
 
+        public function hasFree() {
+            
+            return defined('WPPAYFORM_VERSION');
+        }
+
+        public function versionCheck()
+        {
+            $currentFreeVersion = WPPAYFORM_VERSION; 
+            $currentProVersion = WPPAYFORMPRO_VERSION;
+
+            return version_compare($currentFreeVersion, '4.3.2', '>=') && version_compare($currentProVersion, '4.3.2', '>=');
+        }
+
         public function renderNotice()
         {
             add_action('admin_notices', function () {
                 if (current_user_can('activate_plugins')) {
                     echo '<div class="notice notice-error"><p>';
-                    echo __('Please install & Activate Paymattic Pro to use xendit-payment-for-paymattic plugin.', 'xendit-payment-for-paymattic');
+                    echo __('Please install & Activate Paymattic and Paymattic Pro to use xendit-payment-for-paymattic plugin.', 'xendit-payment-for-paymattic');
                     echo '</p></div>';
                 }
             });
         }
 
-        public function addVersionNotice()
+        public function updateVersionNotice()
         {
-            $currentVersion = WPPAYFORM_VERSION; // Paymattic version
-            if (!version_compare($currentVersion, '4.3.2', '>=')) {
-                add_action('admin_notices', function () {
-                    if (current_user_can('activate_plugins')) {
-                        echo '<div class="notice notice-error"><p>';
-                        echo __('Please update Paymattic and Paymattic Pro to use xendit-payment-for-paymattic plugin!', 'xendit-payment-for-paymattic');
-                        echo '</p></div>';
-                    }
-                });
-            }
+            add_action('admin_notices', function () {
+                if (current_user_can('activate_plugins')) {
+                    echo '<div class="notice notice-error"><p>';
+                    echo __('Please update Paymattic and Paymattic Pro to use xendit-payment-for-paymattic plugin!', 'xendit-payment-for-paymattic');
+                    echo '</p></div>';
+                }
+            });
         }
     }
 
-    add_action('wppayform_loaded', function () {
+    add_action('init', function () {
+        
         $xendit = (new XenditForPaymattic);
 
-        $xendit->addVersionNotice();
-
-        if ($xendit->hasPro()) {
+        if (!$xendit->hasFree() || !$xendit->hasPro()) {
+            $xendit->renderNotice();
+        } else if (!$xendit->versionCheck()) {
+            $xendit->updateVersionNotice();
+        } else {
             $xendit->boot();
         }
-    });
 
-    add_action('init', function () {
-        $xendit = (new XenditForPaymattic);
-        if (!$xendit->hasPro()) {
-            $xendit->renderNotice();
-        }
     });
 }
