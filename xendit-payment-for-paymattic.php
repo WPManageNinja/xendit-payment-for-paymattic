@@ -3,7 +3,7 @@
 /**
  * @package xendit-payment-for-paymattic
  * 
-*/
+ */
 
 /** 
  * Plugin Name: Xendit Payment for paymattic
@@ -57,14 +57,15 @@ if (!class_exists('XenditForPaymattic')) {
             return defined('WPPAYFORMPRO_DIR_PATH') || defined('WPPAYFORMPRO_VERSION');
         }
 
-        public function hasFree() {
-            
+        public function hasFree()
+        {
+
             return defined('WPPAYFORM_VERSION');
         }
 
         public function versionCheck()
         {
-            $currentFreeVersion = WPPAYFORM_VERSION; 
+            $currentFreeVersion = WPPAYFORM_VERSION;
             $currentProVersion = WPPAYFORMPRO_VERSION;
 
             return version_compare($currentFreeVersion, '4.3.2', '>=') && version_compare($currentProVersion, '4.3.2', '>=');
@@ -94,7 +95,7 @@ if (!class_exists('XenditForPaymattic')) {
     }
 
     add_action('init', function () {
-        
+
         $xendit = (new XenditForPaymattic);
 
         if (!$xendit->hasFree() || !$xendit->hasPro()) {
@@ -104,6 +105,5 @@ if (!class_exists('XenditForPaymattic')) {
         } else {
             $xendit->boot();
         }
-
     });
 }

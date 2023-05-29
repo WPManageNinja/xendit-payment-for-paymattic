@@ -15,9 +15,9 @@ use WPPayForm\App\Services\ConfirmationHelper;
 use WPPayForm\App\Models\SubmissionActivity;
 
 // can't use namespace as these files are not accessible yet
-require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR. '/Settings/XenditElement.php';
-require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR. '/Settings/XenditSettings.php';
-require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR. '/API/IPN.php';
+require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/Settings/XenditElement.php';
+require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/Settings/XenditSettings.php';
+require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/API/IPN.php';
 
 
 class XenditProcessor
@@ -129,7 +129,7 @@ class XenditProcessor
     }
 
     public function handleRedirect($transaction, $submission, $form, $methodSettings)
-    {        
+    {
         $successUrl = $this->getSuccessURL($form, $submission);
         $shoudSendEmail = true;
         // we need to change according to the payment gateway documentation
@@ -147,12 +147,12 @@ class XenditProcessor
 
         $paymentArgs = apply_filters('wppayform_xendit_payment_args', $paymentArgs, $submission, $transaction, $form);
         $invoice = (new IPN())->makeApiCall('invoices', $paymentArgs, $form->ID, 'POST');
-        
-        if(is_wp_error($invoice)) {
+
+        if (is_wp_error($invoice)) {
             $message = $invoice->error_data[423]['message'];
-            wp_send_json_error( array('message' => $message), 423 );
+            wp_send_json_error(array('message' => $message), 423);
         }
-       
+
         $invoiceId = Arr::get($invoice, 'id');
         $status = Arr::get($invoice, 'status');
 
