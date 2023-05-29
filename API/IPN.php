@@ -76,7 +76,7 @@ class IPN
         $submission = $submissionModel->getSubmission($transaction->submission_id);
 
         if ($submission->submission_hash != $externalId) {
-            // not our invoic
+            // not our invoice
             return;
         }
 
