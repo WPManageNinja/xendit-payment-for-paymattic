@@ -103,12 +103,12 @@ class XenditSettings extends BasePaymentMethod
                 'placeholder' => __('Live Secret Key', 'xendit-payment-for-paymattic')
             ),
             'desc' => array(
-                'value' => '<p>See our <a href="https://paymattic.com/docs/how-to-integrate-xendit-in-wordpress-with-paymattic/" target="_blank" rel="noopener">documentation</a> to get more information about xendit setup.</p>',
+                'value' => '<p>See our <a href="https://paymattic.com/docs/how-to-integrate-xendit-in-wordpress" target="_blank" rel="noopener">documentation</a> to get more information about xendit setup.</p>',
                 'type' => 'html_attr',
                 'placeholder' => __('Description', 'xendit-payment-for-paymattic')
             ),
             'webhook_desc' => array(
-                'value' => "<h3>Xendit Webhook </h3> <p>In order for Xendit to function completely for payments, you must configure your Xendit webhooks. Visit your <a href='https://dashboard.xendit.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url('?wpf_xendit_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-configure-stripe-payment-gateway-in-wordpress-with-paymattic/' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>invoice paid</code></li></ul> </div>",
+                'value' => "<h3>Xendit Webhook </h3> <p>In order for Xendit to function completely for payments, you must configure your Xendit webhooks. Visit your <a href='https://dashboard.xendit.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url('?wpf_xendit_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-integrate-xendit-in-wordpress#webhook' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>invoice paid</code></li></ul> </div>",
                 'label' => __('Webhook URL', 'xendit-payment-for-paymattic'),
                 'type' => 'html_attr'
             ),
