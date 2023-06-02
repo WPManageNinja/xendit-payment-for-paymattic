@@ -68,7 +68,7 @@ class XenditSettings extends BasePaymentMethod
         $result = array(
             'available' => 'no',
             'url' => '',
-            'slug' => 'flutterwave-payment-for-paymattic'
+            'slug' => 'xendit-payment-for-paymattic'
         );
 
         // $response = wp_remote_get($githubApi, 
