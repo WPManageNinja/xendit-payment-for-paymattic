@@ -65,21 +65,27 @@ class XenditSettings extends BasePaymentMethod
     public static function checkForUpdate($slug)
     {
         $githubApi = "https://api.github.com/repos/WPManageNinja/{$slug}/releases";
+        $result = array(
+            'available' => 'no',
+            'url' => '',
+            'slug' => 'flutterwave-payment-for-paymattic'
+        );
 
-        $response = wp_remote_get($githubApi, 
-        [
-            'headers' => array('Accept' => 'application/json',
-            'authorization' => 'bearer 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')
-        ]);
+        // $response = wp_remote_get($githubApi, 
+        // [
+        //     'headers' => array('Accept' => 'application/json',
+        //     'authorization' => 'bearer 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')
+        // ]);
 
-        // $response = wp_remote_get($githubApi);      
+        $response = wp_remote_get($githubApi);
         $releases = json_decode($response['body']);
-  
         if (isset($releases->documentation_url)) {
-            return 'no';
+            return $result;
         }
+
         $latestRelease = $releases[0];
         $latestVersion = $latestRelease->tag_name;
+        $zipUrl = $latestRelease->zipball_url;
     
         $plugins = get_plugins();
         $currentVersion = '';
@@ -92,16 +98,23 @@ class XenditSettings extends BasePaymentMethod
             }
         }
 
-        if  (version_compare( $latestVersion, $currentVersion, '>')) {
-            return 'yes';
+        if (version_compare( $latestVersion, $currentVersion, '>')) {
+            $result['available'] = 'yes';
+            $result['url'] = $zipUrl;
         }
 
-        return 'no';
+        return $result;
     }
 
     public static function getSettings()
     {
         $setting = get_option('wppayform_payment_settings_xendit', []);
+
+        // Check especially only for addons
+        $tempSettings = static::settingsKeys();
+        if (isset($tempSettings['update_available'])) {
+            $setting['update_available'] = $tempSettings['update_available'];
+        }
         return wp_parse_args($setting, static::settingsKeys());
     }
 
@@ -155,10 +168,14 @@ class XenditSettings extends BasePaymentMethod
             ),
             'is_pro_item' => array(
                 'value' => 'yes',
-                'label' => __('PayPal', 'xendit-payment-for-paymattic'),
+                'label' => __('Xendit', 'xendit-payment-for-paymattic'),
             ),
             'update_available' => array(
-                'value' => 'no',
+                'value' => array(
+                    'available' => 'no',
+                    'url' => '',
+                    'slug' => 'xendit-payment-for-paymattic'
+                ),
                 'type' => 'update_check',
                 'label' => __('Update to new version avaiable', 'xendit-payment-for-paymattic'),
             )
