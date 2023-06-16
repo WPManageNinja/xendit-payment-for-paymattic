@@ -86,6 +86,10 @@ class XenditSettings extends BasePaymentMethod
         $latestRelease = $releases[0];
         $latestVersion = $latestRelease->tag_name;
         $zipUrl = $latestRelease->zipball_url;
+
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
     
         $plugins = get_plugins();
         $currentVersion = '';
