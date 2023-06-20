@@ -15,7 +15,7 @@ class IPN
 {
     public function init()
     {
-        add_action('init', array($this, 'verifyIPN'));
+        $this->verifyIPN();
     }
 
     public function verifyIPN()
