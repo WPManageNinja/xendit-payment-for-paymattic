@@ -2,8 +2,8 @@
 Contributors: hasanuzzamanshamim, wpmanageninja, akmelias, dasnitesh780
 Tags: payment form, donations, payments, xendit payments, Philippines Payment, Indonesian Payments
 Requires at least: 4.5
-Tested up to: 6.2.1
-Stable tag: 1.0.0
+Tested up to: 6.6
+Stable tag: 1.0.2
 Requires PHP: 7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
