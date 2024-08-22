@@ -49,7 +49,7 @@ class XenditSettings extends BasePaymentMethod
     /**
      * @return Array of default fields
      */
-    public static function settingsKeys()
+    public static function settingsKeys() : array
     {
         $slug = 'xendit-payment-for-paymattic';
 
@@ -58,6 +58,8 @@ class XenditSettings extends BasePaymentMethod
             'payment_mode' => 'test',
             'test_api_key' => '',
             'live_api_key' => '',
+            'invoice_duration' => 'none',
+            'customer_notification_preference' => ['email'],
             'update_available' => $updateAvailable
         );
     }
@@ -136,7 +138,7 @@ class XenditSettings extends BasePaymentMethod
     /**
      * @return Array of global fields
      */
-    public function globalFields()
+    public function globalFields() : array
     {
         return array(
             'payment_mode' => array(
@@ -159,6 +161,32 @@ class XenditSettings extends BasePaymentMethod
                 'label' => __('Live Secret Key', 'xendit-payment-for-paymattic'),
                 'type' => 'live_secret_key',
                 'placeholder' => __('Live Secret Key', 'xendit-payment-for-paymattic')
+            ),
+            'invoice_duration' => array(
+                'value' => '' ,
+                'label' => __('Invoice Duration in', 'xendit-payment-for-paymattic'),
+                'type' => 'dropdown',
+                'options' => array(
+                    'none' => __('None', 'xendit-payment-for-paymattic'),
+                    '2' => __('2 Hours', 'xendit-payment-for-paymattic'),
+                    '4' => __('4 Hours', 'xendit-payment-for-paymattic'),
+                    '6' => __('6 Hours', 'xendit-payment-for-paymattic'),
+                    '8' => __('8 Hours', 'xendit-payment-for-paymattic'),
+                    '12' => __('12 Hours', 'xendit-payment-for-paymattic'),
+                    '24' => __('24 Hours (Default)', 'xendit-payment-for-paymattic'),
+                ),
+                'tooltip' => "<span>Select the duration of the invoice (Optional), </br> Select 'None' If you want/have configuration in Xendit dashboard for invoice duration</span>",
+            ),
+            'customer_notification_preference' => array(
+                'value' => ['email'],
+                'label' => __('Customer Notification Preference', 'xendit-payment-for-paymattic'),
+                'options' => array(
+                    'whatsapp' => __('Whatsapp', 'xendit-payment-for-paymattic'),
+                    'email' => __('Email', 'xendit-payment-for-paymattic'),
+                    'viber' => __('Viber', 'xendit-payment-for-paymattic')
+                ),
+                'tooltip' => "<span>Select the notification preference of your choice for the customer </span>",
+                'type' => 'multiple_checkbox',
             ),
             'desc' => array(
                 'value' => '<p>See our <a href="https://paymattic.com/docs/how-to-integrate-xendit-in-wordpress" target="_blank" rel="noopener">documentation</a> to get more information about xendit setup.</p>',

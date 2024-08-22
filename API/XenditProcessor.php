@@ -130,23 +130,46 @@ class XenditProcessor
 
     public function handleRedirect($transaction, $submission, $form, $methodSettings)
     {
+        $settings = (new \XenditPaymentForPaymattic\Settings\XenditSettings())->getSettings();
+
+        $invoice_duration = Arr::get($settings, 'invoice_duration', '');
+        $customer_notification_preference = Arr::get($settings, 'customer_notification_preference', []);
+
         $successUrl = $this->getSuccessURL($form, $submission);
-        $shoudSendEmail = true;
         // we need to change according to the payment gateway documentation
         $paymentArgs = array(
             'external_id' => $submission->submission_hash,
             'amount' => number_format((float) $transaction->payment_total / 100, 2, '.', ''),
             'description' => $form->post_title,
             'payer_email' => $submission->customer_email,
-            'invoice_duration' => 86400,
-            // 'should_send_email' => $shoudSendEmail,
+            'should_send_email' => true,
+            'customer' => array(
+                'given_names' => $submission->customer_name ? $submission->customer_name : 'Guest',
+                'email' => $submission->customer_email,
+            ),
             'success_redirect_url' => $successUrl,
             'currency' => $submission->currency,
             'locale' => 'en',
         );
 
+        if ($invoice_duration && $invoice_duration != 'none') {
+            $invoice_duration = intval($invoice_duration) * 3600;
+            $paymentArgs['invoice_duration'] = $invoice_duration;
+        }
+
+        if ($customer_notification_preference && count($customer_notification_preference) > 0) {
+            $paymentArgs['customer_notification_preference'] = array(
+                'invoice_created' => $customer_notification_preference,
+                'invoice_reminder' => $customer_notification_preference,
+                'invoice_paid' => $customer_notification_preference,
+            );
+        }
+
+
         $paymentArgs = apply_filters('wppayform_xendit_payment_args', $paymentArgs, $submission, $transaction, $form);
         $invoice = (new IPN())->makeApiCall('invoices', $paymentArgs, $form->ID, 'POST');
+
+     
 
         if (is_wp_error($invoice)) {
             $message = $invoice->error_data[423]['message'];

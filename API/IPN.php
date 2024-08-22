@@ -108,13 +108,15 @@ class IPN
         $basicAuthCred = base64_encode($basicAuthCred);
 
         $headers = [
+            'Content-Type' => 'application/json',
             'Authorization' => 'Basic ' . $basicAuthCred
         ];
+    
 
         if ($method == 'POST') {
             $response = wp_remote_post('https://api.xendit.co/v2/' . $path, [
                 'headers' => $headers,
-                'body' => $args
+                'body' => json_encode($args)
             ]);
         } else {
             $response = wp_remote_get('https://api.xendit.co/v2/' . $path, [

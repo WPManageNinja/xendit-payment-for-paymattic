@@ -3,7 +3,7 @@ Contributors: hasanuzzamanshamim, wpmanageninja, akmelias, dasnitesh780
 Tags: payment form, donations, payments, xendit payments, Philippines Payment, Indonesian Payments
 Requires at least: 4.5
 Tested up to: 6.6
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 Requires PHP: 7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -27,6 +27,10 @@ Xendit is a payment gateway that allows businesses to accept payments from custo
 
 == Changelog ==
 
+= 1.0.3 August 22, 2024=
+* Adds Invoice duration option
+* Adds Customer Notification preference
+* Fix: Force override of invoice duration
 
 = 1.0.0 =
 * Init Release
