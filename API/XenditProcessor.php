@@ -138,7 +138,22 @@ class XenditProcessor
         $successUrl = $this->getSuccessURL($form, $submission);
         // we need to change according to the payment gateway documentation
         $formDataFormatted = $submission->form_data_formatted;
+        $formDataRaw = $submission->form_data_raw;
         $phone = Arr::get($formDataFormatted, 'phone', '');
+        $address = $formDataRaw['address_input'];
+
+        if (!empty($address)) {
+           $address = array(
+                'city' => Arr::get($address, 'city', ''),
+                'country' => Arr::get($address, 'country', ''),
+                'postal_code' => Arr::get($address, 'zip_code', ''),
+                'state' => Arr::get($address, 'state', ''),
+                'street_line1' => Arr::get($address, 'address_line_1', ''),
+                'street_line2' => Arr::get($address, 'address_line_2', ''),
+           );
+        }
+  
+
         // we need to change according to the payment gateway documentation
         $paymentArgs = array(
             'external_id' => $submission->submission_hash,
@@ -150,11 +165,13 @@ class XenditProcessor
                 'given_names' => $submission->customer_name ? $submission->customer_name : 'Guest',
                 'email' => $submission->customer_email,
                 'mobile_number' => $phone ? $phone : '0000000000',
+                'addresses' => $address ? [$address] : [],
             ),
             'success_redirect_url' => $successUrl,
             'currency' => $submission->currency,
             'locale' => 'en',
         );
+        
 
         if ($invoice_duration && $invoice_duration != 'none') {
             $invoice_duration = intval($invoice_duration) * 3600;
