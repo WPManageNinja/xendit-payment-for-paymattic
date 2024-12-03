@@ -27,9 +27,13 @@ Xendit is a payment gateway that allows businesses to accept payments from custo
 
 == Changelog ==
 
+= 1.0.4 December 03, 2024 =
+* Adds mobile number to xendit payment args
+
 = 1.0.3 August 22, 2024=
 * Adds Invoice duration option
 * Adds Customer Notification preference
+* Fix: Force override of invoice duration
 
 = 1.0.0 =
 * Init Release
