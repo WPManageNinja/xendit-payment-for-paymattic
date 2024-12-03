@@ -137,6 +137,9 @@ class XenditProcessor
 
         $successUrl = $this->getSuccessURL($form, $submission);
         // we need to change according to the payment gateway documentation
+        $formDataFormatted = $submission->form_data_formatted;
+        $phone = Arr::get($formDataFormatted, 'phone', '');
+        // we need to change according to the payment gateway documentation
         $paymentArgs = array(
             'external_id' => $submission->submission_hash,
             'amount' => number_format((float) $transaction->payment_total / 100, 2, '.', ''),
@@ -146,6 +149,7 @@ class XenditProcessor
             'customer' => array(
                 'given_names' => $submission->customer_name ? $submission->customer_name : 'Guest',
                 'email' => $submission->customer_email,
+                'mobile_number' => $phone ? $phone : '0000000000',
             ),
             'success_redirect_url' => $successUrl,
             'currency' => $submission->currency,
