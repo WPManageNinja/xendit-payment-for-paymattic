@@ -3,7 +3,7 @@ Contributors: hasanuzzamanshamim, wpmanageninja, akmelias, dasnitesh780
 Tags: payment form, donations, payments, xendit payments, Philippines Payment, Indonesian Payments
 Requires at least: 4.5
 Tested up to: 6.6
-Stable tag: 1.0.3
+Stable tag: 1.0.5
 Requires PHP: 7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -26,6 +26,9 @@ Xendit is a payment gateway that allows businesses to accept payments from custo
 
 
 == Changelog ==
+
+= 1.0.5 April 28, 2025 =
+* Adds json validity for webhook
 
 = 1.0.4 December 03, 2024 =
 * Adds mobile number to xendit payment args
