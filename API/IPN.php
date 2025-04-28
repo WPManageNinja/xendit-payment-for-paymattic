@@ -42,6 +42,11 @@ class IPN
 
         $data =  json_decode($post_data);
 
+        if (!is_object($data)) {
+            error_log("Invalid or empty JSON received.");
+            return;
+        }
+
         if (!property_exists($data, 'event')) {
             $this->handleInvoicePaid($data);
         } else {
