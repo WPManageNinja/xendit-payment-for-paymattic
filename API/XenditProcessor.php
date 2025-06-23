@@ -56,7 +56,7 @@ class XenditProcessor
     {
         foreach ($transactions as $transaction) {
             if ($transaction->payment_method == 'xendit' && $transaction->charge_id) {
-                $transactionUrl = Arr::get(unserialize($transaction->payment_note), '_links.dashboard.href');
+                $transactionUrl = Arr::get(maybe_unserialize($transaction->payment_note), '_links.dashboard.href');
                 $transaction->transaction_url =  $transactionUrl;
             }
         }
@@ -285,6 +285,40 @@ class XenditProcessor
         return $transaction;
     }
 
+    public function handleOtherStatus($status, $updateData, $transaction)
+    {
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+
+        $formDataRaw = $submission->form_data_raw;
+        $formDataRaw['xendit_ipn_data'] = $updateData;
+        $submissionData = array(
+            'payment_status' => $status,
+            'form_data_raw' => maybe_serialize($formDataRaw),
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+
+        $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+        $transactionModel = new Transaction();
+        $data = array(
+            'charge_id' => $updateData['charge_id'],
+            'payment_note' => $updateData['payment_note'],
+            'status' => $status,
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+        $transactionModel->where('id', $transaction->id)->update($data);
+
+        $transaction = $transactionModel->getTransaction($transaction->id);
+        SubmissionActivity::createActivity(array(
+            'form_id' => $transaction->form_id,
+            'submission_id' => $transaction->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Transaction Marked as %s and xendit Transaction ID: %s', 'xendit-payment-for-paymattic'), $status,  $data['charge_id'])
+        ));
+    }
+
     public function markAsPaid($status, $updateData, $transaction)
     {
         $submissionModel = new Submission();
@@ -320,6 +354,7 @@ class XenditProcessor
 
         do_action('wppayform/form_payment_success_xendit', $submission, $transaction, $transaction->form_id, $updateData);
         do_action('wppayform/form_payment_success', $submission, $transaction, $transaction->form_id, $updateData);
+
     }
 
     public function validateSubscription($paymentItems)

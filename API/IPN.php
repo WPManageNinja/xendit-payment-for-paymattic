@@ -67,13 +67,14 @@ class IPN
     {
         $invoiceId = $data->id;
         $externalId = $data->external_id;
+        $status = strtolower($data->status);
 
         //get transaction from database
         $transaction = Transaction::where('charge_id', $invoiceId)
             ->where('payment_method', 'xendit')
             ->first();
 
-        if (!$transaction || $transaction->payment_method != 'xendit') {
+        if (!$transaction || $transaction->payment_method != 'xendit' || $transaction->payment_status == $status) {
             return;
         }
 
@@ -93,15 +94,19 @@ class IPN
 
         do_action('wppayform/form_submission_activity_start', $transaction->form_id);
 
-        $status = 'paid';
-
         $updateData = [
             'payment_note'     => maybe_serialize($data),
             'charge_id'        => sanitize_text_field($invoiceId),
+            'status' => $status
         ];
 
         $xenditProcessor = new XenditProcessor();
-        $xenditProcessor->markAsPaid($status, $updateData, $transaction);
+        if ('paid' == $status) {
+            $xenditProcessor->markAsPaid($status, $updateData, $transaction);
+        } else {
+            $xenditProcessor->handleOtherStatus($status, $updateData, $transaction);
+        }
+        
     }
 
 
