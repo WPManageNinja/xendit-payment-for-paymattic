@@ -60,7 +60,32 @@ class IPN
 
     protected function handleIpn($data)
     {
-        //handle specific events in the future
+        $eventType = $data->event ?? 'unknown';
+        error_log("event type: " . $eventType);   
+        try {
+            switch ($eventType) {
+                case 'recurring.created':
+                    $this->handleRecurringCreated($data);
+                    break;
+                    case 'recurring.succeeded':
+                    $this->handleRecurringSucceeded($data);
+                    break;
+                case 'recurring.failed':
+                    $this->handleRecurringFailed($data);
+                    break;
+                case 'payment.succeeded':
+                    $this->handlePaymentSucceeded($data);
+                    break;
+                case 'payment.failed':
+                    $this->handlePaymentFailed($data);
+                    break;
+                default:
+                    error_log('Unhandled webhook event: ' . $eventType);
+            }
+            
+        } catch (\Exception $e) {
+            error_log('Webhook processing error: ' . $e->getMessage());
+        }
     }
 
     protected function handleInvoicePaid($data)
@@ -124,12 +149,12 @@ class IPN
     
 
         if ($method == 'POST') {
-            $response = wp_remote_post('https://api.xendit.co/v2/' . $path, [
+            $response = wp_remote_post('https://api.xendit.co/' . $path, [
                 'headers' => $headers,
                 'body' => json_encode($args)
             ]);
         } else {
-            $response = wp_remote_get('https://api.xendit.co/v2/' . $path, [
+            $response = wp_remote_get('https://api.xendit.co/' . $path, [
                 'headers' => $headers,
                 'body' => $args
             ]);
@@ -155,5 +180,35 @@ class IPN
         }
 
         return $responseData;
+    }
+
+    private function handleRecurringCreated($data)
+    {
+        // Handle recurring created event
+        error_log('Recurring created: ' . json_encode($data));
+    }
+
+    private function handleRecurringSucceeded($data)
+    {
+        // Handle recurring succeeded event
+        error_log('Recurring succeeded: ' . json_encode($data));
+    }
+
+    private function handleRecurringFailed($data)
+    {
+        // Handle recurring failed event
+        error_log('Recurring failed: ' . json_encode($data));
+    }
+
+    private function handlePaymentSucceeded($data)
+    {
+        // Handle payment succeeded event
+        error_log('Payment succeeded: ' . json_encode($data));
+    }
+
+    private function handlePaymentFailed($data)
+    {
+        // Handle payment failed event
+        error_log('Payment failed: ' . json_encode($data));
     }
 }

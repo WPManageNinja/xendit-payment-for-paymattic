@@ -13,11 +13,14 @@ use WPPayForm\App\Models\Submission;
 use WPPayForm\App\Services\PlaceholderParser;
 use WPPayForm\App\Services\ConfirmationHelper;
 use WPPayForm\App\Models\SubmissionActivity;
+use XenditPaymentForPaymattic\API\XenditSubscription;
 
 // can't use namespace as these files are not accessible yet
 require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/Settings/XenditElement.php';
 require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/Settings/XenditSettings.php';
 require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/API/IPN.php';
+require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/API/XenditPlan.php';
+require_once XENDIT_PAYMENT_FOR_PAYMATTIC_DIR . '/API/XenditSubscription.php';
 
 
 class XenditProcessor
@@ -37,7 +40,7 @@ class XenditProcessor
         // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
-        add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
+        // add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
     }
 
 
@@ -91,7 +94,18 @@ class XenditProcessor
         $transaction = $transactionModel->getTransaction($transactionId);
 
         $submission = (new Submission())->getSubmission($submissionId);
-        $this->handleRedirect($transaction, $submission, $form, $paymentMode);
+
+        if ($hasSubscriptions) {
+            $this->handleSubscriptionPayment($transaction, $submission, $form);
+        } else {
+            $this->handleRedirect($transaction, $submission, $form, $paymentMode);
+        }
+    }
+
+    private function handleSubscriptionPayment($transaction, $submission, $form)
+    {
+        // we have to check if the subscription is already created or not
+        (new XenditSubscription())->handleSubscription($submission, $form, []); // this is the plan
     }
 
     private function getSuccessURL($form, $submission)
@@ -140,9 +154,9 @@ class XenditProcessor
         $formDataFormatted = $submission->form_data_formatted;
         $formDataRaw = $submission->form_data_raw;
         $phone = Arr::get($formDataFormatted, 'phone', '');
-        $address = $formDataRaw['address_input'];
+        $address = Arr::get($formDataRaw, 'address_input', []);
 
-        if (!empty($address)) {
+        if (!empty($address) && is_array($address)) {
            $address = array(
                 'city' => Arr::get($address, 'city', ''),
                 'country' => Arr::get($address, 'country', ''),
