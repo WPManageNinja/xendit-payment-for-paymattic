@@ -39,9 +39,7 @@ class XenditSubscription
                 ), 200);
                 
             }
-        
-            // Handle the plan response based on status
-            $this->handlePlanResponse($plan, $submission, $form);
+    
         } catch (\Exception $e) {
             error_log('Xendit Subscription Error: ' . $e->getMessage());
 
@@ -175,121 +173,6 @@ class XenditSubscription
 
         return $validSubscriptions[0];
     }
-
-    private function handlePlanResponse($plan, $submission, $form)
-    {
-        if (is_wp_error($plan)) {
-            throw new \Exception('Plan creation failed: ' . $plan->get_error_message());
-        }
-
-        // $status = $plan['status'] ?? 'UNKNOWN';
-        $status = Arr::get($plan, 'status', 'UNKNOWN');
-        $planId = Arr::get($plan, 'id', null);
-
-        error_log('Xendit Plan Status: ' . $status);
-        error_log('Xendit Plan ID: ' . $planId);
-
-        switch ($status) {
-            case 'ACTIVE':
-                return $this->handleActivePlan($plan, $submission, $form);
-
-            case 'REQUIRES_ACTION':
-                return $this->handleRequiresActionPlan($plan, $submission, $form);
-
-            case 'PENDING':
-                return $this->handlePendingPlan($plan, $submission, $form);
-
-            default:
-                error_log('Unknown plan status: ' . $status);
-                throw new \Exception('Unexpected plan status: ' . $status);
-        }
-    }
-
-    private function handleActivePlan($plan, $submission, $form)
-    {
-        // Plan is active - subscription is ready and billing will start automatically
-        $this->updateSubscriptionRecord($plan, $submission, 'active');
-        $this->updateTransactionRecord($plan, $submission, 'subscribed');
-
-        // Log successful activation
-        do_action('wppayform_log_data', [
-            'form_id' => $form->ID,
-            'submission_id' => $submission->id,
-            'type' => 'activity',
-            'created_by' => 'Xendit Bot',
-            'title' => 'Subscription Activated',
-            'content' => 'Subscription plan activated successfully. Plan ID: ' . ($plan['id'] ?? 'unknown')
-        ]);
-
-        wp_send_json_success([
-            'message' => __('Subscription created successfully! Billing will start automatically.', 'xendit-payment-for-paymattic'),
-            'call_next_method' => 'normalRedirect',
-            'redirect_url' => self::getSuccessURL($form, $submission),
-            'subscription_status' => 'active',
-            'plan_id' => $plan['id'] ?? null
-        ], 200);
-    }
-
-    private function handleRequiresActionPlan($plan, $submission, $form)
-    {
-        // Extract action URL from plan response
-        $actionUrl = null;
-        $plan['success_return_url'] = self::getSuccessURL($form, $submission);
-
-        if (isset($plan['actions']) && is_array($plan['actions'])) {
-            foreach ($plan['actions'] as $action) {
-                if (isset($action['url']) && isset($action['method'])) {
-                    $actionUrl = $action['url'];
-                    break;
-                }
-            }
-        }
-
-        if (!$actionUrl) {
-            error_log('Plan response: ' . json_encode($plan));
-            throw new \Exception('Plan requires action but no redirect URL found in response');
-        }
-
-        // Sanitize the redirect URL
-        $redirectUrl = wp_sanitize_redirect($actionUrl);
-        // Update records
-        $this->updateSubscriptionRecord($plan, $submission, 'pending_payment_method');
-        $this->updateTransactionRecord($plan, $submission, 'pending');
-
-        // Log the redirect
-        do_action('wppayform_log_data', [
-            'form_id' => $form->ID,
-            'submission_id' => $submission->id,
-            'type' => 'activity',
-            'created_by' => 'Xendit Bot',
-            'title' => 'Payment Method Setup Required',
-            'content' => 'User redirected to Xendit for payment method setup. Plan ID: ' . ($plan['id'] ?? 'unknown')
-        ]);
-
-        wp_send_json_success([
-            'message' => __('Please complete payment method setup to activate your subscription.', 'xendit-payment-for-paymattic'),
-            'call_next_method' => 'normalRedirect',
-            'redirect_url' => $redirectUrl,
-            'subscription_status' => 'requires_action',
-            'plan_id' => $plan['id'] ?? null
-        ], 200);
-    }
-
-    private function handlePendingPlan($plan, $submission, $form)
-    {
-        // Plan is pending - usually waiting for approval or processing
-        $this->updateSubscriptionRecord($plan, $submission, 'pending');
-        $this->updateTransactionRecord($plan, $submission, 'pending');
-
-        wp_send_json_success([
-            'message' => __('Subscription is being processed. You will be notified once it\'s activated.', 'xendit-payment-for-paymattic'),
-            'call_next_method' => 'normalRedirect',
-            'redirect_url' => self::getSuccessURL($form, $submission),
-            'subscription_status' => 'pending',
-            'plan_id' => $plan['id'] ?? null
-        ], 200);
-    }
-
     private function updateSubscriptionRecord($plan, $submission, $status)
     {
         $subscriptionModel = new Subscription();

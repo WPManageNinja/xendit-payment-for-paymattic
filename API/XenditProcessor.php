@@ -102,11 +102,6 @@ class XenditProcessor
         }
     }
 
-    private function handleSubscriptionPayment($transaction, $submission, $form)
-    {
-        // this is the plan
-    }
-
     private function getSuccessURL($form, $submission)
     {
         // Check If the form settings have success URL

@@ -48,7 +48,7 @@ class XenditPlan
             if (is_wp_error($planResponse)) {
                 throw new \Exception('Failed to create plan: ' . $planResponse->get_error_message());
             }
-            error_log('Plan created successfully: ' . $planResponse['id']);
+            error_log('Plan created successfully: ' . json_encode($planResponse));
             return $planResponse;
             
         } catch (\Exception $e) {
