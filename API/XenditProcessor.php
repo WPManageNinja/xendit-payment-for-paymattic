@@ -40,7 +40,7 @@ class XenditProcessor
         // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
-        // add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
+        add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
     }
 
 
@@ -96,7 +96,7 @@ class XenditProcessor
         $submission = (new Submission())->getSubmission($submissionId);
 
         if ($hasSubscriptions) {
-            $this->handleSubscriptionPayment($transaction, $submission, $form);
+           (new XenditSubscription())->handleSubscription($submission, $form, []); 
         } else {
             $this->handleRedirect($transaction, $submission, $form, $paymentMode);
         }
@@ -104,8 +104,7 @@ class XenditProcessor
 
     private function handleSubscriptionPayment($transaction, $submission, $form)
     {
-        // we have to check if the subscription is already created or not
-        (new XenditSubscription())->handleSubscription($submission, $form, []); // this is the plan
+        // this is the plan
     }
 
     private function getSuccessURL($form, $submission)
@@ -371,11 +370,43 @@ class XenditProcessor
 
     }
 
-    public function validateSubscription($paymentItems)
+    
+    public function validateSubscription($paymentItems, $formattedElements, $form_data, $subscriptionItems)
     {
-        wp_send_json_error(array(
-            'message' => __('Subscription with xendit is not supported yet!', 'xendit-payment-for-paymattic'),
-            'payment_error' => true
-        ), 423);
+        $singleItemTotal = 0;
+        foreach ($paymentItems as $paymentItem) {
+            if (isset($paymentItem['recurring_tax']) && $paymentItem['recurring_tax'] == 'yes') {
+                continue;
+            }
+            if ($paymentItem['line_total']) {
+                $singleItemTotal += $paymentItem['line_total'];
+            }
+            if ($paymentItem['line_total']) {
+                $singleItemTotal += $paymentItem['line_total'];
+            }
+        }
+
+        $validSubscriptions = [];
+        foreach ($subscriptionItems as $subscriptionItem) {
+            if ($subscriptionItem['recurring_amount']) {
+                $validSubscriptions[] = $subscriptionItem;
+            }
+        }
+
+        if ($singleItemTotal && count($validSubscriptions)) {
+            wp_send_json_error(array(
+                'message' => __('Xendit does not support subscriptions payment and Single Amount Payment at one request', 'xendit-payment-for-paymattic'),
+                'payment_error' => true
+            ), 423);
+        }
+
+        if (count($validSubscriptions) > 1) {
+            wp_send_json_error(array(
+                'message' => __('Xendit does not support multiple subscriptions at one request', 'xendit-payment-for-paymattic'),
+                'payment_error' => true
+            ), 423);
+        }
+
+        return $paymentItems;
     }
 }

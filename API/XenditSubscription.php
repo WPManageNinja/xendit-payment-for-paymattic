@@ -9,17 +9,37 @@ use XenditPaymentForPaymattic\API\XenditPlan;
 use WPPayForm\App\Models\Subscription;
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
+use XenditPaymentForPaymattic\Settings\XenditSettings;
 
 class XenditSubscription
 {
     public function handleSubscription($submission, $form, $paymentItems = array())
     {
         try {
-            $subscription = $this->getValidSubscription($submission, $form, $paymentItems);
+            $subscriptionModel = $this->getValidSubscription($submission, $form, $paymentItems);
+
+
+            $xenditCustomerId = static::getOrCreateXenditCustomer($submission, $form->ID);
+            $successUrl = static::getSuccessURL($form, $submission);
+            // $failureUrl = $submission->failure_url; // should return to form
 
             // Create plan - this will throw an exception if customer creation fails
-            $plan = XenditPlan::createPlan($subscription, $submission, $form->ID);
-            
+            $plan = XenditPlan::createPlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
+
+            if ($status = Arr::get($plan, 'status') == 'REQUIRES_ACTION') {
+
+                $redirectUrl = Arr::get($plan, 'actions.0.url', null);
+
+                wp_send_json_success(array(
+                    'message' => __('Please complete payment method setup to activate your subscription.', 'xendit-payment-for-paymattic'),
+                    'call_next_method' => 'normalRedirect',
+                    'redirect_url' => $redirectUrl,
+                    'subscription_status' => 'requires_action',
+                    'plan_id' => $plan['id'] ?? null
+                ), 200);
+                
+            }
+        
             // Handle the plan response based on status
             $this->handlePlanResponse($plan, $submission, $form);
         } catch (\Exception $e) {
@@ -30,6 +50,103 @@ class XenditSubscription
                 'payment_error' => true,
                 'type' => 'subscription_error'
             ), 423);
+        }
+    }
+
+    public static function getOrCreateXenditCustomer($submission, $formId)
+    {
+        try {
+            $phone = Arr::get($submission->form_data_formatted, 'phone', null);
+            
+            // $customerData = array(
+            //     'reference_id' => 'customer_' . $submission->id . '_' . time(),
+            //     'mobile_number' => $phone,
+            //     'email' => $submission->customer_email,
+            //     'type' => 'INDIVIDUAL',
+            //     'individual_detail' => array(
+            //         'given_names' => $submission->customer_name ?: 'Guest'
+            //     )                
+            // );
+
+
+            $customerReferenceId = '';
+            if ((new XenditSettings())->isLive($formId)) {
+                $customerReferenceId =  'wppayform_xendit_live_cust_' . $submission->customer_email;
+            } else {
+                $customerReferenceId = 'wppayform_xendit_test_cust_' . $submission->customer_email;
+            }
+
+
+            // check if the customer already exists
+            $savedCustomerId = get_option($customerReferenceId, false);
+    
+            if ($savedCustomerId) {
+                $existingXenditCustomer = (new IPN())->makeApiCall('customers/' . $savedCustomerId, [], $formId, 'GET');
+                 if (!is_wp_error($existingXenditCustomer)) {
+                    return $existingXenditCustomer['id'];
+                }
+            }
+
+    
+            $phone = '';
+            $givenNames = $submission->customer_name ?: 'Guest';
+    
+            $customerData = [
+                'reference_id' => $customerReferenceId,
+                'type' => 'INDIVIDUAL',
+                'date_of_registration' => date('Y-m-d H:i:s'),
+                'individual_detail' => [
+                    'given_names' => $submission->customer_name ?: 'Guest',
+                ],
+                'email' => $submission->customer_email,
+                'mobile_number' => $phone,
+                'address' => '',
+            ];
+
+
+            // unset if any field is empty
+            foreach ($customerData as $key => $value) {
+                if (empty($value)) {
+                    unset($customerData[$key]);
+                }
+            }
+
+            // Handle customer name
+            // if (!empty($submission->customer_name)) {
+            //     $nameParts = explode(' ', trim($submission->customer_name), 2);
+            //     $customerData['given_names'] = $nameParts[0];
+            //     if (isset($nameParts[1]) && !empty($nameParts[1])) {
+            //         $customerData['surname'] = $nameParts[1];
+            //     }
+            // } else {
+            //     $customerData['given_names'] = 'Guest Customer';
+            // }
+
+            // Log request for debugging
+            error_log('Creating Xendit customer with data: ' . json_encode($customerData));
+        
+
+            $response = (new IPN())->makeApiCall('customers', $customerData, $formId, 'POST');
+
+            update_option($customerReferenceId, $response['id']);
+
+            
+            if (is_wp_error($response)) {
+                error_log('Customer creation failed: ' . $response->get_error_message());
+                return $response; // Return WP_Error to be handled by caller
+            }
+
+            // Validate successful response
+            if (empty($response) || !isset($response['id'])) {
+                error_log('Invalid customer response: ' . json_encode($response));
+                return new \WP_Error('invalid_response', 'Invalid customer response from Xendit');
+            }
+        
+            return $response['id'];
+            
+        } catch (\Exception $e) {
+            error_log('Exception in createCustomer: ' . $e->getMessage());
+            return new \WP_Error('customer_creation_failed', $e->getMessage());
         }
     }
 

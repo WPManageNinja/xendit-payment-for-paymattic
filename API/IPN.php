@@ -154,7 +154,12 @@ class IPN
                 'body' => json_encode($args)
             ]);
         } else {
-            $response = wp_remote_get('https://api.xendit.co/' . $path, [
+            // For GET requests, add query parameters to the URL
+            $url = 'https://api.xendit.co/' . $path;
+        
+            
+        
+            $response = wp_remote_get($url, [
                 'headers' => $headers,
                 'body' => $args
             ]);
@@ -164,8 +169,11 @@ class IPN
             return $response;
         }
 
+
+
         $body = wp_remote_retrieve_body($response);
         $responseData = json_decode($body, true);
+
 
         if (empty($responseData['id'])) {
             $message = Arr::get($responseData, 'detail');
