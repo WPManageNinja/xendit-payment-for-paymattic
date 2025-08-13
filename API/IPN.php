@@ -8,6 +8,9 @@ if (!defined('ABSPATH')) {
 
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Submission;
+use WPPayForm\App\Models\Subscription;
+use WPPayForm\App\Models\SubscriptionTransaction;
+use WPPayForm\App\Models\SubmissionActivity;
 use XenditPaymentForPaymattic\Settings\XenditSettings;
 use WPPayForm\App\Models\Transaction;
 
@@ -50,8 +53,6 @@ class IPN
         if (!property_exists($data, 'event')) {
             $this->handleInvoicePaid($data);
         } else {
-            error_log("specific event");
-            error_log(print_r($data));
             $this->handleIpn($data);
         }
 
@@ -60,33 +61,104 @@ class IPN
 
     protected function handleIpn($data)
     {
-        $eventType = $data->event ?? 'unknown';
-        error_log("event type: " . $eventType);   
+        $eventType = $data->event ? str_replace( '.', '_', $data->event) : 'unknown';
+        error_log("event type: " . $eventType);
         try {
             switch ($eventType) {
-                case 'recurring.created':
-                    $this->handleRecurringCreated($data);
+                case 'recurring_plan_activated':
+                    $this->handleRecurringPlanActivated($data->data);
                     break;
-                    case 'recurring.succeeded':
-                    $this->handleRecurringSucceeded($data);
+                case 'recurring_plan_inactivated':
+                    $this->handleRecurringPlanDeActivated($data->data);
                     break;
-                case 'recurring.failed':
-                    $this->handleRecurringFailed($data);
+                case 'recurring_cycle_succeeded':
+                    $this->handleRecurringSucceeded($data->data);
                     break;
-                case 'payment.succeeded':
-                    $this->handlePaymentSucceeded($data);
-                    break;
-                case 'payment.failed':
-                    $this->handlePaymentFailed($data);
+                case 'recurring_cycle_failed':
+                    $this->handleRecurringFailed($data->data);
                     break;
                 default:
                     error_log('Unhandled webhook event: ' . $eventType);
             }
             
         } catch (\Exception $e) {
-            error_log('Webhook processing error: ' . $e->getMessage());
+            // exit with message
+            return $e->getMessage();
         }
     }
+
+    private function handleRecurringPlanActivated($plan)
+    {
+        // plan id is the vendor subscription id
+        $vendorSubscriptionId = $plan->id ?? null;
+
+        if (!$vendorSubscriptionId) {
+            return;
+        }
+
+        $subscriptionModel = Subscription::where('vendor_subscriptipn_id', $vendorSubscriptionId)->first();
+
+        if (!$subscriptionModel) {
+            return;
+        }
+
+
+        $status = strtolower($plan->status ?? 'active');
+        $nextBillingDate = $plan->schedule->anchor_date ? date('Y-m-d H:i:s', strtotime($plan->schedule->anchor_date)) : null;
+
+        $updateData = [
+            'vendor_subscriptipn_id' => $vendorSubscriptionId,
+            'status' => $status,
+            'next_billing_date' => $nextBillingDate,
+            'vendor_response' => maybe_serialize($plan)
+        ];
+
+        $subscriptionModel->update($updateData);
+
+        exit(200);
+
+    }
+
+    private function handleRecurringPlanDeActivated($plan)
+    {
+         // plan id is the vendor subscription id
+        $vendorSubscriptionId = $plan->id ?? null;
+
+        if (!$vendorSubscriptionId) {
+            return;
+        }
+
+        $subscriptionModel = Subscription::where('vendor_subscriptipn_id', $vendorSubscriptionId)->first();
+
+        if (!$subscriptionModel || $subscriptionModel->status == 'cancelled') {
+            return;
+        }
+
+        $status = strtolower($plan->status ?? 'cancelled');
+        if ($status == 'inactive') {
+            $status = 'cancelled';
+        }
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($subscriptionModel->submission_id);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $subscriptionModel->form_id,
+            'submission_id' => $subscriptionModel->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Cancelled with Subscription ID: %s', 'xendit-payment-for-paymattic'), json_encode($plan) .'', $subscriptionModel->submission_id)
+        ));
+
+        $subscriptionModel->update(['status' => $status]);
+
+        do_action('wppayform/subscription_payment_canceled', $submission, $subscriptionModel, $submission->form_id, $plan);
+        do_action('wppayform/subscription_payment_canceled_authorizedotnet', $submission, $subscriptionModel, $submission->form_id, $plan);
+
+        exit(200);
+    }
+
+
 
     protected function handleInvoicePaid($data)
     {
@@ -196,16 +268,132 @@ class IPN
         error_log('Recurring created: ' . json_encode($data));
     }
 
-    private function handleRecurringSucceeded($data)
+    private function handleRecurringSucceeded($recurringCharge)
     {
-        // Handle recurring succeeded event
-        error_log('Recurring succeeded: ' . json_encode($data));
+        $vendorSubscriptionId = $recurringCharge->plan_id ?? null;
+        $vendorChargeId = $recurringCharge->id ?? null;
+
+        if (!$vendorSubscriptionId || !$vendorChargeId) {
+            return;
+        }
+
+        $subscriptionModel = Subscription::where('vendor_subscriptipn_id', $vendorSubscriptionId)->first();
+
+        if (!$subscriptionModel) {
+            return;
+        }
+
+        $submissionModel = Submission::where('id', $subscriptionModel->submission_id)->first();
+
+        if (!$submissionModel) {
+            error_log('Submission not found for subscription ID: ' . $subscriptionModel->id);
+            return;
+        }
+
+        $amount = $recurringCharge->amount ?? 0;
+        
+        $status = strtolower($recurringCharge->status ?? 'SUCCEEDED');
+
+        if ($status == 'succeeded') {
+            $status = 'paid';
+        }
+        $cycleNumber = $recurringCharge->cycle_number ?? null;
+        if ($cycleNumber == 1) {
+            $transactionModel = new Transaction();
+            $transaction = $transactionModel->where('submission_id', $submissionModel->id)
+                ->where('payment_method', 'xendit')
+                ->where('subscription_id', $subscriptionModel->id)
+                ->where('charge_id', '!=', $vendorChargeId)
+                ->first();
+         
+            if ($transaction) {
+                // update the transaction status to paid
+                $transaction->update([
+                    'status' => 'paid',
+                    'charge_id' => $vendorChargeId,
+                    'payment_total' => $amount,
+                    'updated_at' => current_time('mysql')
+                ]);
+                // update the bill count
+                $subscriptionModel->updateSubscription($subscriptionModel->id, [
+                    'status' => 'active',
+                    'bill_count' => 1,
+                    'updated_at' => current_time('mysql')
+                ]);
+
+                // update submission to paid if not already
+                $submissionModel->update([
+                    'payment_status' => 'paid',
+                    'updated_at' => current_time('mysql')
+                ]);
+
+                // New Payment Made so we have to fire some events here
+                // also trigger submission paid event
+                do_action('wppayform/payment_sucess', $submissionModel, $transaction, $submissionModel->form_id);
+                do_action('wppayform/payment_sucess_xendit', $submissionModel, $transaction, $submissionModel->form_id);
+                do_action('wppayform/subscription_payment_received', $submissionModel, $transaction, $submissionModel->form_id, $subscriptionModel);
+                do_action('wppayform/subscription_payment_received_xendit', $submissionModel, $transaction, $submissionModel->form_id, $subscriptionModel);
+            } else {
+                return;
+            }
+
+        } else {
+            $subscriptionTransaction = new SubscriptionTransaction();
+            $paymentMode = $submissionModel->payment_mode ?: 'test';
+            $transactionId = $subscriptionTransaction->maybeInsertCharge([
+                'form_id' => $submissionModel->form_id,
+                'user_id' => $submissionModel->user_id,
+                'submission_id' => $submissionModel->id,
+                'subscription_id' => $submissionModel->id,
+                'transaction_type' => 'subscription',
+                'payment_method' => 'authorizedotnet',
+                'charge_id' => $vendorChargeId,
+                'payment_total' => $amount * 100,
+                'status' => 'paid',
+                'currency' => $submissionModel->currency,
+                'payment_mode' => $paymentMode,
+                'payment_note' => sanitize_text_field('subscription payment synced from upstream'),
+                'created_at' => current_time('mysql'), // current_time('mysql'),
+                'updated_at' => current_time('mysql')
+            ]);
+
+            $transaction = $subscriptionTransaction->getTransaction($transactionId);
+            $subscriptionModel = new Subscription();
+        
+            // Check For Payment EOT
+            if ($subscriptionModel->bill_times && $cycleNumber >= $subscriptionModel->bill_times) {
+                // we will update the subscription status to completed
+                $subscriptionModel->updateSubscription($subscriptionModel->id, [
+                    'status' => 'completed',
+                    'bill_count' => $cycleNumber
+                ]);
+
+                SubmissionActivity::createActivity(array(
+                    'form_id' => $submissionModel->form_id,
+                    'submission_id' => $submissionModel->id,
+                    'type' => 'activity',
+                    'created_by' => 'Paymattic BOT',
+                    'content' => __('The Subscription Term Period has been completed', 'wp-payment-form-pro')
+                ));
+
+                $updatedSubscription = $subscriptionModel->getSubscription($subscriptionModel->id);
+                do_action('wppayform/subscription_payment_eot_completed', $submissionModel, $updatedSubscription, $submissionModel->form_id, []);
+                do_action('wppayform/subscription_payment_eot_completed_authorizedotnet', $submissionModel, $updatedSubscription, $submissionModel->form_id, []);
+            } 
+
+        }
+
+    
+        error_log(print_r($recurringCharge, true));
+        return;
     }
 
     private function handleRecurringFailed($data)
     {
+
         // Handle recurring failed event
         error_log('Recurring failed: ' . json_encode($data));
+        error_log(print_r($data, true));
     }
 
     private function handlePaymentSucceeded($data)

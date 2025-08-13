@@ -73,13 +73,11 @@ class XenditSettings extends BasePaymentMethod
             'slug' => 'xendit-payment-for-paymattic'
         );
 
-        // $response = wp_remote_get($githubApi, 
-        // [
-        //     'headers' => array('Accept' => 'application/json',
-        //     'authorization' => 'bearer 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')
-        // ]);
 
         $response = wp_remote_get($githubApi);
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
         $releases = json_decode($response['body']);
         if (isset($releases->documentation_url)) {
             return $result;

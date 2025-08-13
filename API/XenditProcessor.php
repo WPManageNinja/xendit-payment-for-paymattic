@@ -96,7 +96,7 @@ class XenditProcessor
         $submission = (new Submission())->getSubmission($submissionId);
 
         if ($hasSubscriptions) {
-           (new XenditSubscription())->handleSubscription($submission, $form, []); 
+           (new XenditSubscription())->handleSubscription($transaction, $submission, $form, []); 
         } else {
             $this->handleRedirect($transaction, $submission, $form, $paymentMode);
         }

@@ -13,7 +13,7 @@ use XenditPaymentForPaymattic\Settings\XenditSettings;
 
 class XenditSubscription
 {
-    public function handleSubscription($submission, $form, $paymentItems = array())
+    public function handleSubscription($transaction, $submission, $form, $paymentItems = array())
     {
         try {
             $subscriptionModel = $this->getValidSubscription($submission, $form, $paymentItems);
@@ -24,12 +24,28 @@ class XenditSubscription
             // $failureUrl = $submission->failure_url; // should return to form
 
             // Create plan - this will throw an exception if customer creation fails
+            
             $plan = XenditPlan::createPlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
+      
+            $updateData = [
+                'vendor_subscriptipn_id' => $plan['id'], // xendit plan id will be treated as vendor subscription id
+                'vendor_customer_id' => $plan['customer_id'] ?? null,
+                'vendor_plan_id' => $plan['reference_id'] ?? null,
+            ];
 
+            $transaction->update([
+                'subscription_id' => $subscriptionModel->id,
+                'payment_mode' => $submission->payment_mode,
+                'payment_total' => $subscriptionModel->recurring_amount,
+                'transaction_type' => 'subscription',
+            ]);
+
+            Subscription::where('id', $subscriptionModel->id)
+                ->update($updateData);
+       
+        
             if ($status = Arr::get($plan, 'status') == 'REQUIRES_ACTION') {
-
                 $redirectUrl = Arr::get($plan, 'actions.0.url', null);
-
                 wp_send_json_success(array(
                     'message' => __('Please complete payment method setup to activate your subscription.', 'xendit-payment-for-paymattic'),
                     'call_next_method' => 'normalRedirect',
@@ -44,7 +60,7 @@ class XenditSubscription
             error_log('Xendit Subscription Error: ' . $e->getMessage());
 
             wp_send_json_error(array(
-                'message' => 'Subscription creation failed. Please try again.',
+                'message' => $e->getMessage(),
                 'payment_error' => true,
                 'type' => 'subscription_error'
             ), 423);
@@ -55,17 +71,7 @@ class XenditSubscription
     {
         try {
             $phone = Arr::get($submission->form_data_formatted, 'phone', null);
-            
-            // $customerData = array(
-            //     'reference_id' => 'customer_' . $submission->id . '_' . time(),
-            //     'mobile_number' => $phone,
-            //     'email' => $submission->customer_email,
-            //     'type' => 'INDIVIDUAL',
-            //     'individual_detail' => array(
-            //         'given_names' => $submission->customer_name ?: 'Guest'
-            //     )                
-            // );
-
+    
 
             $customerReferenceId = '';
             if ((new XenditSettings())->isLive($formId)) {
@@ -76,15 +82,14 @@ class XenditSubscription
 
 
             // check if the customer already exists
-            $savedCustomerId = get_option($customerReferenceId, false);
-    
+            $savedCustomerId = get_option($customerReferenceId, '');
+
             if ($savedCustomerId) {
                 $existingXenditCustomer = (new IPN())->makeApiCall('customers/' . $savedCustomerId, [], $formId, 'GET');
                  if (!is_wp_error($existingXenditCustomer)) {
                     return $existingXenditCustomer['id'];
                 }
             }
-
     
             $phone = '';
             $givenNames = $submission->customer_name ?: 'Guest';
