@@ -62,7 +62,6 @@ class IPN
     protected function handleIpn($data)
     {
         $eventType = $data->event ? str_replace( '.', '_', $data->event) : 'unknown';
-        error_log("event type: " . $eventType);
         try {
             switch ($eventType) {
                 case 'recurring_plan_activated':
@@ -102,14 +101,36 @@ class IPN
             return;
         }
 
+        $submissionModel = Submission::where('id', $subscriptionModel->submission_id)->first();
+        if (!$submissionModel) {
+            error_log('Submission not found for subscription ID: ' . $subscriptionModel->id);
+            return;
+        }
+        if ($subscriptionModel->trial_days) {
+            $transaction = Transaction::where('subscription_id', $subscriptionModel->id)
+                ->where('payment_method', 'xendit')
+                ->first();
+            
+            do_action('wppayform/payment_sucess', $submissionModel, $transaction, $submissionModel->form_id);
+            do_action('wppayform/payment_sucess_xendit', $submissionModel, $transaction, $submissionModel->form_id);
+            do_action('wppayform/subscription_payment_received', $submissionModel, $transaction, $submissionModel->form_id, $subscriptionModel);
+            do_action('wppayform/subscription_payment_received_xendit', $submissionModel, $transaction, $submissionModel->form_id, $subscriptionModel);
+        } else if ($subscriptionModel->initial_amount) {
+            // update the subscription in xendit to the eactual recurring amount
+            // make api call to xendit to update the plan
+            $updatedXenditPlan = $this->makeApiCall('recurring/plans/' . $vendorSubscriptionId, [
+                'amount' => (int)($subscriptionModel->recurring_amount / 100),
+                'currency' => strtoupper($submissionModel->currency)
+            ], $subscriptionModel->form_id, 'PATCH');
+
+        }
+
 
         $status = strtolower($plan->status ?? 'active');
-        $nextBillingDate = $plan->schedule->anchor_date ? date('Y-m-d H:i:s', strtotime($plan->schedule->anchor_date)) : null;
 
         $updateData = [
             'vendor_subscriptipn_id' => $vendorSubscriptionId,
             'status' => $status,
-            'next_billing_date' => $nextBillingDate,
             'vendor_response' => maybe_serialize($plan)
         ];
 
@@ -206,68 +227,6 @@ class IPN
         
     }
 
-
-    public function makeApiCall($path, $args, $formId, $method = 'GET')
-    {
-        $apiKey = (new XenditSettings())->getApiKey($formId);
-        // we are using basic authentication , we will use the api key as username and password empty so add : at the end
-        $basicAuthCred = $apiKey . ':';
-        $basicAuthCred = base64_encode($basicAuthCred);
-
-        $headers = [
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Basic ' . $basicAuthCred
-        ];
-    
-
-        if ($method == 'POST') {
-            $response = wp_remote_post('https://api.xendit.co/' . $path, [
-                'headers' => $headers,
-                'body' => json_encode($args)
-            ]);
-        } else {
-            // For GET requests, add query parameters to the URL
-            $url = 'https://api.xendit.co/' . $path;
-        
-            
-        
-            $response = wp_remote_get($url, [
-                'headers' => $headers,
-                'body' => $args
-            ]);
-        }
-
-        if (is_wp_error($response)) {
-            return $response;
-        }
-
-
-
-        $body = wp_remote_retrieve_body($response);
-        $responseData = json_decode($body, true);
-
-
-        if (empty($responseData['id'])) {
-            $message = Arr::get($responseData, 'detail');
-            if (!$message) {
-                $message = Arr::get($responseData, 'error.message');
-            }
-            if (!$message) {
-                $message = 'Unknown Xendit API request error';
-            }
-
-            return new \WP_Error(423, $message, $responseData);
-        }
-
-        return $responseData;
-    }
-
-    private function handleRecurringCreated($data)
-    {
-        // Handle recurring created event
-        error_log('Recurring created: ' . json_encode($data));
-    }
-
     private function handleRecurringSucceeded($recurringCharge)
     {
         $vendorSubscriptionId = $recurringCharge->plan_id ?? null;
@@ -303,7 +262,6 @@ class IPN
             $transaction = $transactionModel->where('submission_id', $submissionModel->id)
                 ->where('payment_method', 'xendit')
                 ->where('subscription_id', $subscriptionModel->id)
-                ->where('charge_id', '!=', $vendorChargeId)
                 ->first();
          
             if ($transaction) {
@@ -323,6 +281,7 @@ class IPN
 
                 // update submission to paid if not already
                 $submissionModel->update([
+                    'payment_total' => $amount,
                     'payment_status' => 'paid',
                     'updated_at' => current_time('mysql')
                 ]);
@@ -383,8 +342,6 @@ class IPN
 
         }
 
-    
-        error_log(print_r($recurringCharge, true));
         return;
     }
 
@@ -396,15 +353,73 @@ class IPN
         error_log(print_r($data, true));
     }
 
-    private function handlePaymentSucceeded($data)
-    {
-        // Handle payment succeeded event
-        error_log('Payment succeeded: ' . json_encode($data));
-    }
-
     private function handlePaymentFailed($data)
     {
         // Handle payment failed event
         error_log('Payment failed: ' . json_encode($data));
     }
+
+    public function makeApiCall($path, $args, $formId, $method = 'GET')
+    {
+        $apiKey = (new XenditSettings())->getApiKey($formId);
+        // we are using basic authentication , we will use the api key as username and password empty so add : at the end
+        $basicAuthCred = $apiKey . ':';
+        $basicAuthCred = base64_encode($basicAuthCred);
+
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Basic ' . $basicAuthCred
+        ];
+    
+
+        if ($method == 'POST') {
+            $response = wp_remote_post('https://api.xendit.co/' . $path, [
+                'headers' => $headers,
+                'body' => json_encode($args)
+            ]);
+
+        } elseif ($method == 'PATCH') {
+            $response = wp_remote_request('https://api.xendit.co/' . $path, [
+                'method' => 'PATCH',
+                'headers' => $headers,
+                'body' => json_encode($args)
+            ]);
+
+        } else {
+            // For GET requests, add query parameters to the URL
+            $url = 'https://api.xendit.co/' . $path;
+            if (!empty($args)) {
+                $url .= '?' . http_build_query($args);
+            }
+            
+            $response = wp_remote_get($url, [
+                'headers' => $headers
+            ]);
+        }
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+
+
+        $body = wp_remote_retrieve_body($response);
+        $responseData = json_decode($body, true);
+
+
+        if (empty($responseData['id'])) {
+            $message = Arr::get($responseData, 'detail');
+            if (!$message) {
+                $message = Arr::get($responseData, 'error.message');
+            }
+            if (!$message) {
+                $message = 'Unknown Xendit API request error';
+            }
+
+            return new \WP_Error(423, $message, $responseData);
+        }
+
+        return $responseData;
+    }
+
 }

@@ -10,15 +10,20 @@ class XenditPlan
 {
     public static function createPlan($xenditCustomerId, $subscription, $submission, $formId, $successUrl, $failureUrl)
     {
-
         if (!$xenditCustomerId) {
             wp_send_json_error('Xendit customer ID is required to create a plan.', 400);
         }
 
         if ($subscription->trial_days) {
-            $anchrorDate = date('c', strtotime('+' . $subscription->trial_days . ' days'));
+            $anchorDate = date('c', strtotime('+' . $subscription->trial_days . ' days'));
         } else {
             $anchorDate = date('c');
+        }
+
+        $amount = (int)($subscription->recurring_amount / 100);
+
+        if ($subscription->initial_amount) {
+            $amount += (int)($subscription->initial_amount / 100);
         }
 
         // Create recurring plan using correct endpoint
@@ -27,19 +32,18 @@ class XenditPlan
             'customer_id' => $xenditCustomerId,
             'recurring_action' => 'PAYMENT',
             'currency' => strtoupper($submission->currency),
-            'amount' => (int)($subscription->recurring_amount / 100),
+            'amount' => $amount,
             'schedule' => array(
                 'reference_id' => 'schedule_' . $subscription->id,
                 'interval' => self::getInterval($subscription->billing_interval),
                 'interval_count' => 1,
-                'total_recurrence' => $subscription->bill_times ?: null,
+                'total_recurrence' => $subscription->bill_times ? (int) $subscription->bill_times :   null,
                 'anchor_date' => $anchorDate,
                 'retry_interval' => 'DAY',
                 'retry_interval_count' => 1,
                 'total_retry' => 3,
                 'failed_attempt_notifications' => [1, 2]
             ),
-            'immediate_action_type' => 'FULL_AMOUNT', // Assuming this is the correct field
             'notification_config' => array(
                 'recurring_created' => ['EMAIL'],
                 'recurring_succeeded' => ['EMAIL'],
@@ -54,8 +58,13 @@ class XenditPlan
             'failure_return_url' => $successUrl,
         );
 
+        if (!$subscription->trial_days) {
+            $planData['immediate_action_type'] = 'FULL_AMOUNT'; // Assuming this is the correct field
+        }
+
         try {
             $planResponse = (new IPN())->makeApiCall('recurring/plans', $planData, $submission->form_id, 'POST');
+
             if (is_wp_error($planResponse)) {
                 throw new \Exception('Failed to create plan: ' . $planResponse->get_error_message());
             }
