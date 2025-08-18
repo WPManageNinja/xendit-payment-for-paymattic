@@ -16,9 +16,12 @@ class XenditSubscription
     public function handleSubscription($transaction, $submission, $form, $paymentItems = array())
     {
         try {
+            $currency = strtoupper($submission->currency);
+            // validate minimum amount
+            $this->validateMinimumAmount($transaction, $currency);
+            // get the subscription
             $subscriptionModel = $this->getValidSubscription($submission, $form, $paymentItems);
-
-
+            // create the customer
             $xenditCustomerId = static::getOrCreateXenditCustomer($submission, $form->ID);
             $successUrl = static::getSuccessURL($form, $submission);
             // $failureUrl = $submission->failure_url; // should return to form
@@ -256,5 +259,43 @@ class XenditSubscription
             'payment_method' => 'xendit'
         ), home_url());
         return wp_sanitize_redirect($url);
+    }
+
+    // Validate minimum payment amount for Xendit currencies
+    private function validateMinimumAmount($transaction, $currency)
+    {
+        $minimumAmounts = $this->getMinimumAmounts();
+        
+        if (!isset($minimumAmounts[$currency])) {
+            return; // Currency not in minimum requirements
+        }
+        
+        $minimumAmount = $minimumAmounts[$currency];
+        $subscription = Subscription::where('submission_id', $transaction->submission_id)->first();
+        if (($subscription->recurring_amount / 100) < $minimumAmount) {
+            wp_send_json([
+                'errors' => sprintf(
+                    __('Minimum amount for Xendit is %s %s', 'xendit-payment-for-paymattic'),
+                    $minimumAmount,
+                    $currency
+                )
+            ], 423);
+        }
+    }
+
+    /**
+     * Get minimum payment amounts for supported currencies
+     *
+     * @return array
+     */
+    private function getMinimumAmounts()
+    {
+        return apply_filters('wppayform/xendit_minimum_amounts', [
+            'IDR' => 1000,
+            'PHP' => 50,
+            'THB' => 10,
+            'VND' => 5000,
+            'MYR' => 2,
+        ]);
     }
 }

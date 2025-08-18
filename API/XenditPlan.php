@@ -65,8 +65,25 @@ class XenditPlan
         try {
             $planResponse = (new IPN())->makeApiCall('recurring/plans', $planData, $submission->form_id, 'POST');
 
+            // Handle errors
             if (is_wp_error($planResponse)) {
-                throw new \Exception('Failed to create plan: ' . $planResponse->get_error_message());
+                $errorMessage = $planResponse->get_error_message();
+                $errorData = $planResponse->get_error_data();
+                
+                // Check for specific Xendit error codes
+                if (isset($errorData['error_code'])) {
+                    $errorCode = $errorData['error_code'];
+                    $apiMessage = $errorData['message'] ?? $errorMessage;
+                    if ($errorCode === 'UNSUPPORTED_CURRENCY') {
+                        throw new \Exception($apiMessage);
+                    }
+                    
+                    if ($errorCode === 'API_VALIDATION_ERROR') {
+                        throw new \Exception($apiMessage);
+                    }
+                }
+                
+                throw new \Exception($errorMessage);
             }
 
             return $planResponse;

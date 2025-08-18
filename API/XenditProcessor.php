@@ -95,6 +95,18 @@ class XenditProcessor
 
         $submission = (new Submission())->getSubmission($submissionId);
 
+        // check if the currency is valid
+        $currency = strtoupper($submission->currency);
+        $supportedCurrencies = array('IDR', 'PHP', 'MYR', 'VND', 'THB');
+        if (!in_array($currency, $supportedCurrencies)) {
+            wp_send_json([
+                'errors'      => $currency . ' is not supported by Xendit payment method'
+            ], 423);
+        }
+
+        // apply filter to allow developers to allow others currencies
+        $currency = apply_filters('wppayform/xendit_supported_currency', $currency, $submission);
+
         if ($hasSubscriptions) {
            (new XenditSubscription())->handleSubscription($transaction, $submission, $form, []); 
         } else {
