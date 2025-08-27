@@ -10,6 +10,7 @@ use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
 use WPPayForm\App\Models\Form;
 use WPPayForm\App\Models\Submission;
+use WPPayForm\App\Models\Subscription;
 use WPPayForm\App\Services\PlaceholderParser;
 use WPPayForm\App\Services\ConfirmationHelper;
 use WPPayForm\App\Models\SubmissionActivity;
@@ -41,6 +42,8 @@ class XenditProcessor
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
         add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
+        // cancel subscription 
+        add_action('wppayform/subscription_settings_cancel_xendit', array($this, 'cancelSubscription'), 10, 3);
     }
 
 
@@ -415,5 +418,70 @@ class XenditProcessor
         }
 
         return $paymentItems;
+    }
+    public function cancelSubscription($subscription, $transaction, $form)
+    {
+        if (!$subscription->vendor_plan_id) {
+            return;
+        }
+        
+        $planId = $subscription->vendor_plan_id;
+
+        $updateData = [
+            'status' => 'INACTIVE',
+            'cancellation_reason' => 'User requested cancellation',
+            'cancelled_at' => date('Y-m-d H:i:s'),
+            'cancelled_by' => 'merchant'
+        ];
+        
+        // Add cancellation reason if provided
+        
+        $response = (new IPN())->makeApiCall("recurring/plans/{$planId}", $updateData, $form->ID, 'PATCH');
+        
+        if (is_wp_error($response)) {
+            error_log('Failed to cancel subscription: ' . $response->get_error_message());
+            return [
+                'success' => false,
+                'message' => 'Failed to cancel subscription',
+                'data' => $response
+            ];
+        }
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update([
+            'status' => 'cancelled'
+        ]);
+
+        $transactionModel = new Transaction();
+        $transactionModel->where('id', $transaction->id)->update([
+            'status' => 'cancelled'
+        ]);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($subscription->submission_id);
+        SubmissionActivity::createActivity(array(
+            'form_id' => $form->ID,
+            'submission_id' => $submission->id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Cancelled with Subscription ID: %s', 'xendit-payment-for-paymattic'), $planId)
+        ));
+        do_action('wppayform_subscription_cancelled', $subscription);
+        do_action('wppayform_subscription_cancelled_xendit', $subscription);
+
+        if ($response && isset($response['status']) && $response['status'] === 'INACTIVE') {
+            error_log("Subscription {$planId} cancelled successfully");
+            return [
+                'success' => true,
+                'message' => 'Subscription cancelled successfully',
+                'data' => $response
+            ];
+        }
+        
+        return [
+            'success' => false,
+            'message' => 'Failed to cancel subscription',
+            'data' => $response
+        ];
     }
 }
