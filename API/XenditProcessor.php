@@ -42,7 +42,7 @@ class XenditProcessor
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_xendit_action_refunded', array($this, 'handleRefund'), 10, 3);
         add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
-        // cancel subscription 
+        add_action('wppayform/subscription_settings_sync_xendit', array($this, 'syncSubscription'), 10, 2);
         add_action('wppayform/subscription_settings_cancel_xendit', array($this, 'cancelSubscription'), 10, 3);
     }
 
@@ -419,69 +419,91 @@ class XenditProcessor
 
         return $paymentItems;
     }
-    public function cancelSubscription($subscription, $transaction, $form)
+    /**
+     * Cancel subscription (user dashboard or admin).
+     * Paymattic calls: do_action('wppayform/subscription_settings_cancel_xendit', $formId, $submission, $subscription)
+     */
+    public function cancelSubscription($formId, $submission, $subscription)
     {
-        if (!$subscription->vendor_plan_id) {
+        $subscription = is_object($subscription) ? (array) $subscription : $subscription;
+        $formId     = absint($formId);
+        $planId     = Arr::get($subscription, 'vendor_subscriptipn_id') ?: Arr::get($subscription, 'vendor_plan_id');
+        $subId      = Arr::get($subscription, 'id');
+        $submissionId = Arr::get($subscription, 'submission_id');
+
+        if (!$planId) {
+            wp_send_json_error(array('message' => __('No Xendit plan ID found. Cannot cancel subscription.', 'xendit-payment-for-paymattic')), 423);
             return;
         }
-        
-        $planId = $subscription->vendor_plan_id;
 
-        $updateData = [
+        $updateData = array(
             'status' => 'INACTIVE',
             'cancellation_reason' => 'User requested cancellation',
             'cancelled_at' => date('Y-m-d H:i:s'),
             'cancelled_by' => 'merchant'
-        ];
-        
-        // Add cancellation reason if provided
-        
-        $response = (new IPN())->makeApiCall("recurring/plans/{$planId}", $updateData, $form->ID, 'PATCH');
-        
+        );
+
+        $response = (new IPN())->makeApiCall("recurring/plans/{$planId}", $updateData, $formId, 'PATCH');
+
         if (is_wp_error($response)) {
-            error_log('Failed to cancel subscription: ' . $response->get_error_message());
-            return [
-                'success' => false,
-                'message' => 'Failed to cancel subscription',
-                'data' => $response
-            ];
+            wp_send_json_error(array('message' => $response->get_error_message() ?: __('Failed to cancel subscription.', 'xendit-payment-for-paymattic')), 423);
+            return;
         }
 
         $subscriptionModel = new Subscription();
-        $subscriptionModel->where('id', $subscription->id)->update([
-            'status' => 'cancelled'
-        ]);
+        $subscriptionModel->where('id', $subId)->update(array('status' => 'cancelled'));
 
-        $transactionModel = new Transaction();
-        $transactionModel->where('id', $transaction->id)->update([
-            'status' => 'cancelled'
-        ]);
-
-        $submissionModel = new Submission();
-        $submission = $submissionModel->getSubmission($subscription->submission_id);
         SubmissionActivity::createActivity(array(
-            'form_id' => $form->ID,
-            'submission_id' => $submission->id,
+            'form_id' => $formId,
+            'submission_id' => $submissionId,
             'type' => 'info',
             'created_by' => 'PayForm Bot',
             'content' => sprintf(__('Subscription Cancelled with Subscription ID: %s', 'xendit-payment-for-paymattic'), $planId)
         ));
+
         do_action('wppayform_subscription_cancelled', $subscription);
         do_action('wppayform_subscription_cancelled_xendit', $subscription);
 
-        if ($response && isset($response['status']) && $response['status'] === 'INACTIVE') {
-            error_log("Subscription {$planId} cancelled successfully");
-            return [
-                'success' => true,
-                'message' => 'Subscription cancelled successfully',
-                'data' => $response
-            ];
+        // Trigger cancellation emails (same as Stripe)
+        do_action('wppayform/send_email_after_subscription_cancel_', $formId, $subscription, $submission);
+        do_action('wppayform/send_email_after_subscription_cancel_for_user', $submission);
+        do_action('wppayform/send_email_after_subscription_cancel_for_admin', $submission);
+
+        wp_send_json_success(array('message' => __('Subscription cancelled!', 'xendit-payment-for-paymattic')), 200);
+    }
+
+    /**
+     * Sync subscription with Xendit (user dashboard Sync button).
+     * Paymattic calls: do_action('wppayform/subscription_settings_sync_xendit', $formId, $submissionId)
+     */
+    public function syncSubscription($formId, $submissionId)
+    {
+        $formId = absint($formId);
+        $submissionId = absint($submissionId);
+        $subscriptionModel = new Subscription();
+        $subscriptions = $subscriptionModel->getSubscriptions($submissionId);
+
+        if (empty($subscriptions)) {
+            return;
         }
-        
-        return [
-            'success' => false,
-            'message' => 'Failed to cancel subscription',
-            'data' => $response
-        ];
+
+        foreach ($subscriptions as $subscription) {
+            $planId = !empty($subscription->vendor_subscriptipn_id) ? $subscription->vendor_subscriptipn_id : (isset($subscription->vendor_plan_id) ? $subscription->vendor_plan_id : null);
+            if (!$planId) {
+                continue;
+            }
+
+            $response = (new IPN())->makeApiCall("recurring/plans/{$planId}", array(), $formId, 'GET');
+            if (is_wp_error($response)) {
+                continue;
+            }
+
+            $status = isset($response['status']) ? strtolower($response['status']) : null;
+            $localStatus = $subscription->status;
+            $map = array('active' => 'active', 'inactive' => 'cancelled', 'cancelled' => 'cancelled');
+            if ($status && isset($map[$status]) && $map[$status] !== $localStatus) {
+                $subscriptionModel->where('id', $subscription->id)->update(array('status' => $map[$status]));
+            }
+        }
     }
 }
