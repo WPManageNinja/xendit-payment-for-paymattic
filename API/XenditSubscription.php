@@ -23,17 +23,26 @@ class XenditSubscription
             $subscriptionModel = $this->getValidSubscription($submission, $form, $paymentItems);
             // create the customer
             $xenditCustomerId = static::getOrCreateXenditCustomer($submission, $form->ID);
+            if (is_wp_error($xenditCustomerId)) {
+                throw new \Exception($xenditCustomerId->get_error_message());
+            }
             $successUrl = static::getSuccessURL($form, $submission);
             // $failureUrl = $submission->failure_url; // should return to form
 
             // Create plan - this will throw an exception if customer creation fails
-            
             $plan = XenditPlan::createPlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
-      
+
+            if (is_wp_error($plan)) {
+                throw new \Exception($plan->get_error_message());
+            }
+            if (empty($plan) || !is_array($plan)) {
+                throw new \Exception(__('Invalid plan response from Xendit.', 'xendit-payment-for-paymattic'));
+            }
+
             $updateData = [
                 'vendor_subscriptipn_id' => $plan['id'], // xendit plan id will be treated as vendor subscription id
-                'vendor_customer_id' => $plan['customer_id'] ?? null,
-                'vendor_plan_id' => $plan['reference_id'] ?? null,
+                'vendor_customer_id' => isset($plan['customer_id']) ? $plan['customer_id'] : null,
+                'vendor_plan_id' => isset($plan['reference_id']) ? $plan['reference_id'] : null,
             ];
 
             $transaction->update([
@@ -86,7 +95,6 @@ class XenditSubscription
 
             // check if the customer already exists
             $savedCustomerId = get_option($customerReferenceId, '');
-
             if ($savedCustomerId) {
                 $existingXenditCustomer = (new IPN())->makeApiCall('customers/' . $savedCustomerId, [], $formId, 'GET');
                  if (!is_wp_error($existingXenditCustomer)) {
@@ -134,20 +142,19 @@ class XenditSubscription
 
             $response = (new IPN())->makeApiCall('customers', $customerData, $formId, 'POST');
 
-            update_option($customerReferenceId, $response['id']);
-
-            
             if (is_wp_error($response)) {
                 error_log('Customer creation failed: ' . $response->get_error_message());
                 return $response; // Return WP_Error to be handled by caller
             }
 
             // Validate successful response
-            if (empty($response) || !isset($response['id'])) {
+            if (empty($response) || !is_array($response) || !isset($response['id'])) {
                 error_log('Invalid customer response: ' . json_encode($response));
                 return new \WP_Error('invalid_response', 'Invalid customer response from Xendit');
             }
-        
+
+            update_option($customerReferenceId, $response['id']);
+
             return $response['id'];
             
         } catch (\Exception $e) {

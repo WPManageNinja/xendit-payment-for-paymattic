@@ -15,10 +15,11 @@ class XenditPlan
         }
 
         if ($subscription->trial_days) {
-            $anchorDate = date('c', strtotime('+' . $subscription->trial_days . ' days'));
+            $anchorTimestamp = strtotime('+' . (int) $subscription->trial_days . ' days');
         } else {
-            $anchorDate = date('c');
+            $anchorTimestamp = time();
         }
+        $anchorDate = self::getAnchorDateForXendit($anchorTimestamp);
 
         $amount = (int)($subscription->recurring_amount / 100);
 
@@ -69,11 +70,12 @@ class XenditPlan
             if (is_wp_error($planResponse)) {
                 $errorMessage = $planResponse->get_error_message();
                 $errorData = $planResponse->get_error_data();
-                
+                $errorData = is_array($errorData) ? $errorData : array();
+
                 // Check for specific Xendit error codes
                 if (isset($errorData['error_code'])) {
                     $errorCode = $errorData['error_code'];
-                    $apiMessage = $errorData['message'] ?? $errorMessage;
+                    $apiMessage = isset($errorData['message']) ? $errorData['message'] : $errorMessage;
                     if ($errorCode === 'UNSUPPORTED_CURRENCY') {
                         throw new \Exception($apiMessage);
                     }
@@ -113,6 +115,19 @@ class XenditPlan
         return $response;
     }
     
+
+    /**
+     * Xendit does not accept anchor_timestamp with day-of-month 29, 30, or 31.
+     * Returns ISO 8601 date with day clamped to 28 when necessary.
+     */
+    public static function getAnchorDateForXendit($timestamp)
+    {
+        $day = (int) date('j', $timestamp);
+        if ($day >= 29) {
+            $timestamp = strtotime(date('Y-m-28', $timestamp) . ' ' . date('H:i:s', $timestamp));
+        }
+        return date('c', $timestamp);
+    }
 
     public static function getInterval($interval)
     {
