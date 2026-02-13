@@ -29,8 +29,8 @@ class XenditSubscription
             $successUrl = static::getSuccessURL($form, $submission);
             // $failureUrl = $submission->failure_url; // should return to form
 
-            // Create plan - this will throw an exception if customer creation fails
-            $plan = XenditPlan::createPlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
+            // Create or retrieve plan - this will use existing plan if parameters match
+            $plan = XenditPlan::getOrCreatePlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
 
             if (is_wp_error($plan)) {
                 throw new \Exception($plan->get_error_message());
