@@ -28,9 +28,10 @@ class XenditSubscription
             }
             $successUrl = static::getSuccessURL($form, $submission);
             // $failureUrl = $submission->failure_url; // should return to form
+            $failureUrl = home_url();
 
             // Create or retrieve plan - this will use existing plan if parameters match
-            $plan = XenditPlan::getOrCreatePlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, '');
+            $plan = XenditPlan::getOrCreatePlan($xenditCustomerId, $subscriptionModel, $submission, $form->ID, $successUrl, $failureUrl);
 
             if (is_wp_error($plan)) {
                 throw new \Exception($plan->get_error_message());

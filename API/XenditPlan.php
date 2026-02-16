@@ -146,8 +146,8 @@ class XenditPlan
                 'recurring_amount' => (int)($subscription->recurring_amount / 100),
                 'bill_times' => $subscription->bill_times
             ),
-            'success_return_url' => $successUrl,
-            'failure_return_url' => $successUrl,
+            'success_return_url' => self::ensureValidXenditUrl($successUrl),
+            'failure_return_url' => self::ensureValidXenditUrl($failureUrl),
         );
 
         if (!$subscription->trial_days) {
@@ -229,6 +229,26 @@ class XenditPlan
             'year' => 'YEAR'
         ];
         return $intervalMap[$interval] ?? 'MONTH';
+    }
+
+    /**
+     * Ensure URL matches Xendit's required pattern for success_return_url and failure_return_url.
+     * Xendit accepts: http(s) URLs, empty string, or custom scheme URLs.
+     * Localhost URLs may fail—use a tunnel (e.g. ngrok) for local testing if needed.
+     *
+     * @param string $url The URL to validate
+     * @return string Valid absolute URL
+     */
+    private static function ensureValidXenditUrl($url)
+    {
+        $url = trim($url);
+        if (empty($url)) {
+            return home_url('/');
+        }
+        if (!preg_match('#^https?://#i', $url)) {
+            $url = home_url($url);
+        }
+        return esc_url_raw($url);
     }
 
     /**
