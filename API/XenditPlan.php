@@ -70,11 +70,8 @@ class XenditPlan
                 // Return existing plan
                 return $xenditPlan;
             }
-            // Plan exists but doesn't match, we'll create a new one
-            error_log('Xendit plan exists but parameters do not match. Creating new plan.');
         }
 
-        // Plan doesn't exist or doesn't match, create a new one
         return self::createPlan($xenditCustomerId, $subscription, $submission, $formId, $successUrl, $failureUrl, $planId);
     }
 
@@ -114,6 +111,10 @@ class XenditPlan
             $amount += (int)($subscription->initial_amount / 100);
         }
 
+        if ($amount <= 0) {
+            throw new \Exception(__('Invalid subscription amount. Amount must be greater than zero.', 'xendit-payment-for-paymattic'));
+        }
+
         // Create recurring plan using correct endpoint
         $planData = array(
             'reference_id' => $planId,
@@ -124,7 +125,7 @@ class XenditPlan
             'schedule' => array(
                 'reference_id' => 'schedule_' . $subscription->id,
                 'interval' => self::getInterval($subscription->billing_interval),
-                'interval_count' => 1,
+                'interval_count' => self::getIntervalCount($subscription),
                 'total_recurrence' => $subscription->bill_times ? (int) $subscription->bill_times : null,
                 'anchor_date' => $anchorDate,
                 'retry_interval' => 'DAY',
@@ -141,50 +142,44 @@ class XenditPlan
                 'form_id' => $formId,
                 'submission_id' => $submission->id,
                 'payment_method' => 'xendit',
-                'trial_days' => $subscription->trial_days,
-                'billing_interval' => $subscription->billing_interval,
+                'trial_days' => (int) ($subscription->trial_days ?? 0),
+                'billing_interval' => $subscription->billing_interval ?? 'month',
                 'recurring_amount' => (int)($subscription->recurring_amount / 100),
-                'bill_times' => $subscription->bill_times
+                'bill_times' => $subscription->bill_times ? (int) $subscription->bill_times : null,
             ),
             'success_return_url' => self::ensureValidXenditUrl($successUrl),
             'failure_return_url' => self::ensureValidXenditUrl($failureUrl),
         );
 
-        if (!$subscription->trial_days) {
-            $planData['immediate_action_type'] = 'FULL_AMOUNT'; // Assuming this is the correct field
+        // Immediate charge on link can trigger API_VALIDATION_ERROR (e.g. card/currency rules). Allow disabling.
+        $useImmediateCharge = apply_filters('wppayform/xendit_plan_immediate_charge', true, $subscription, $submission);
+        if (!$subscription->trial_days && $useImmediateCharge) {
+            $planData['immediate_action_type'] = 'FULL_AMOUNT';
         }
+        $planData = apply_filters('wppayform/xendit_plan_data', $planData, $subscription, $submission);
+        $planResponse = (new IPN())->makeApiCall('recurring/plans', $planData, $submission->form_id, 'POST');
+        // error_log('Plan Response: ' . print_r($planResponse, true));
 
-        try {
-            $planResponse = (new IPN())->makeApiCall('recurring/plans', $planData, $submission->form_id, 'POST');
+        if (is_wp_error($planResponse)) {
+            $errorMessage = $planResponse->get_error_message();
+            $errorData = $planResponse->get_error_data();
+            $errorData = is_array($errorData) ? $errorData : array();
 
-            // Handle errors
-            if (is_wp_error($planResponse)) {
-                $errorMessage = $planResponse->get_error_message();
-                $errorData = $planResponse->get_error_data();
-                $errorData = is_array($errorData) ? $errorData : array();
-
-                // Check for specific Xendit error codes
-                if (isset($errorData['error_code'])) {
-                    $errorCode = $errorData['error_code'];
-                    $apiMessage = isset($errorData['message']) ? $errorData['message'] : $errorMessage;
-                    if ($errorCode === 'UNSUPPORTED_CURRENCY') {
-                        throw new \Exception($apiMessage);
-                    }
-                    
-                    if ($errorCode === 'API_VALIDATION_ERROR') {
-                        throw new \Exception($apiMessage);
-                    }
+            if (isset($errorData['error_code'])) {
+                $errorCode = $errorData['error_code'];
+                $apiMessage = isset($errorData['message']) ? $errorData['message'] : $errorMessage;
+                if ($errorCode === 'UNSUPPORTED_CURRENCY') {
+                    throw new \Exception($apiMessage);
                 }
-                
-                throw new \Exception($errorMessage);
+                if ($errorCode === 'API_VALIDATION_ERROR') {
+                    throw new \Exception($apiMessage);
+                }
             }
 
-            return $planResponse;
-            
-        } catch (\Exception $e) {
-            error_log('Failed to create plan: ' . $e->getMessage());
-            throw new \Exception('Failed to create plan: ' . $e->getMessage());
+            throw new \Exception($errorMessage);
         }
+
+        return $planResponse;
     }
 
     public static function activatePlan($plan, $formId)
@@ -220,15 +215,41 @@ class XenditPlan
         return date('c', $timestamp);
     }
 
-    public static function getInterval($interval)
+
+    /**
+     * Xendit schedule interval: must be one of DAY, WEEK, MONTH, YEAR (uppercase).
+     */
+    public static function getInterval($billingInterval)
     {
-        $intervalMap = [
+        $interval = strtolower($billingInterval ?? 'month');
+        $map = [
             'day' => 'DAY',
             'week' => 'WEEK',
+            'fortnight' => 'WEEK',
             'month' => 'MONTH',
-            'year' => 'YEAR'
+            'quarter' => 'MONTH',
+            'half_year' => 'MONTH',
+            'year' => 'YEAR',
         ];
-        return $intervalMap[$interval] ?? 'MONTH';
+        return $map[$interval] ?? 'MONTH';
+    }
+
+    /**
+     * Get interval_count for schedule (matches getInterval).
+     */
+    public static function getIntervalCount($subscription)
+    {
+        $interval = strtolower($subscription->billing_interval ?? '');
+        $data = [
+            'day' => ['interval_count' => 1],
+            'week' => ['interval_count' => 1],
+            'fortnight' => ['interval_count' => 2],
+            'month' => ['interval_count' => 1],
+            'quarter' => ['interval_count' => 3],
+            'half_year' => ['interval_count' => 6],
+            'year' => ['interval_count' => 1],
+        ];
+        return Arr::get($data[$interval], 'interval_count', 1);
     }
 
     /**
@@ -302,16 +323,17 @@ class XenditPlan
             return false;
         }
 
-        // Check billing interval
+        // Check billing interval (Xendit returns DAY, WEEK, MONTH, YEAR)
         $expectedInterval = self::getInterval($subscription->billing_interval);
         if (isset($xenditPlan['schedule']['interval']) && 
-            $xenditPlan['schedule']['interval'] != $expectedInterval) {
+            strtoupper($xenditPlan['schedule']['interval']) != $expectedInterval) {
             return false;
         }
 
-        // Check interval count (always 1 for Xendit)
+        // Check interval count (1 for day/week/month, 12 for year)
+        $expectedIntervalCount = self::getIntervalCount($subscription);
         if (isset($xenditPlan['schedule']['interval_count']) && 
-            $xenditPlan['schedule']['interval_count'] != 1) {
+            (int) $xenditPlan['schedule']['interval_count'] != $expectedIntervalCount) {
             return false;
         }
 

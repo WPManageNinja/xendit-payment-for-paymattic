@@ -76,6 +76,9 @@ class IPN
                 case 'recurring_cycle_failed':
                     $this->handleRecurringFailed($data->data);
                     break;
+                case 'payment_method_activated':
+                    // Customer linked payment method; payload is payment method (pm_xxx), not plan. Plan activation = recurring.plan.activated
+                    break;
                 default:
                     error_log('Unhandled webhook event: ' . $eventType);
             }
@@ -305,7 +308,7 @@ class IPN
                 'submission_id' => $submissionModel->id,
                 'subscription_id' => $submissionModel->id,
                 'transaction_type' => 'subscription',
-                'payment_method' => 'authorizedotnet',
+                'payment_method' => 'xendit',
                 'charge_id' => $vendorChargeId,
                 'payment_total' => $amount * 100,
                 'status' => 'paid',

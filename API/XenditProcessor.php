@@ -100,7 +100,7 @@ class XenditProcessor
 
         // check if the currency is valid
         $currency = strtoupper($submission->currency);
-        $supportedCurrencies = array('IDR', 'PHP', 'MYR', 'VND', 'THB');
+        $supportedCurrencies = array('IDR', 'PHP', 'MYR', 'VND', 'THB', 'SGD');
         if (!in_array($currency, $supportedCurrencies)) {
             wp_send_json([
                 'errors'      => $currency . ' is not supported by Xendit payment method'

@@ -138,7 +138,7 @@ class XenditSubscription
             // }
 
             // Log request for debugging
-            error_log('Creating Xendit customer with data: ' . json_encode($customerData));
+            // error_log('Creating Xendit customer with data: ' . json_encode($customerData));
         
 
             $response = (new IPN())->makeApiCall('customers', $customerData, $formId, 'POST');
